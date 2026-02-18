@@ -703,6 +703,185 @@ function renderPanelReminders(reminders) {
 }
 
 
+/* =========================================================
+   WEB SCRAPER UI
+========================================================= */
+
+function initScraperUI() {
+    if (document.getElementById('be-scraper-trigger')) return true;
+    if (!document.body) return false;
+
+    // Create floating scraper trigger button
+    const trigger = document.createElement('button');
+    trigger.id = 'be-scraper-trigger';
+    trigger.className = 'be-scraper-trigger';
+    trigger.title = 'BetterEmail Lead Finder';
+    trigger.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <span>Find Leads</span>
+    `;
+    document.body.appendChild(trigger);
+
+    // Create the search panel
+    const panel = document.createElement('div');
+    panel.id = 'be-scraper-panel';
+    panel.className = 'be-scraper-panel';
+    panel.innerHTML = `
+        <div class="be-scraper-header">
+            <div class="be-scraper-title">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                Lead Finder
+            </div>
+            <button class="be-scraper-close" id="be-scraper-close">&#x2715;</button>
+        </div>
+        <div class="be-scraper-body">
+            <input type="text" class="be-scraper-input" id="be-scraper-input"
+                   placeholder="e.g. UF Computer Science professors">
+            <button class="be-scraper-submit" id="be-scraper-submit">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                Find Leads
+            </button>
+            <div class="be-scraper-status" id="be-scraper-status"></div>
+            <div class="be-scraper-results" id="be-scraper-results"></div>
+        </div>
+    `;
+    document.body.appendChild(panel);
+
+    // Stop Gmail from capturing keyboard events
+    const scraperInput = panel.querySelector('#be-scraper-input');
+    ['keydown', 'keyup', 'keypress', 'focus', 'click'].forEach(evt => {
+        scraperInput.addEventListener(evt, e => e.stopPropagation());
+    });
+
+    // Toggle panel
+    trigger.addEventListener('click', e => {
+        e.stopPropagation();
+        panel.classList.toggle('be-scraper-panel-open');
+    });
+
+    // Close panel
+    panel.querySelector('#be-scraper-close').addEventListener('click', () => {
+        panel.classList.remove('be-scraper-panel-open');
+    });
+
+    // Close when clicking outside
+    document.addEventListener('click', e => {
+        if (!panel.contains(e.target) && e.target !== trigger && !trigger.contains(e.target)) {
+            panel.classList.remove('be-scraper-panel-open');
+        }
+    });
+
+    // Submit handler
+    const submitBtn = panel.querySelector('#be-scraper-submit');
+    submitBtn.addEventListener('click', () => handleScraperSubmit());
+
+    // Enter key submits
+    scraperInput.addEventListener('keydown', e => {
+        e.stopPropagation();
+        if (e.key === 'Enter') handleScraperSubmit();
+    });
+
+    return true;
+}
+
+async function handleScraperSubmit() {
+    const input = document.getElementById('be-scraper-input');
+    const statusEl = document.getElementById('be-scraper-status');
+    const resultsEl = document.getElementById('be-scraper-results');
+    const submitBtn = document.getElementById('be-scraper-submit');
+
+    const prompt = input.value.trim();
+    if (!prompt) {
+        statusEl.className = 'be-scraper-status be-scraper-status-error';
+        statusEl.textContent = 'Please enter a search goal.';
+        return;
+    }
+
+    // Loading state
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<div class="be-spinner"></div><span>Searching...</span>';
+    resultsEl.innerHTML = '';
+    statusEl.className = 'be-scraper-status be-scraper-status-loading';
+    statusEl.textContent = 'Checking cache...';
+
+    try {
+        const res = await fetch('http://localhost:3000/scrape-emails', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+            statusEl.className = 'be-scraper-status be-scraper-status-error';
+            statusEl.textContent = data.error || 'Search failed.';
+            return;
+        }
+
+        const results = data.results || [];
+        const source = data.source || 'unknown';
+
+        if (results.length === 0) {
+            statusEl.className = 'be-scraper-status be-scraper-status-error';
+            statusEl.textContent = 'No results found. Try a different search.';
+            return;
+        }
+
+        // Show source info
+        const sourceLabel = source === 'cache' ? 'From cache' :
+                           source === 'leads_cache' ? 'From saved leads' : 'Live results';
+        statusEl.className = 'be-scraper-status be-scraper-status-success';
+        statusEl.textContent = `${sourceLabel} — ${results.length} contact${results.length !== 1 ? 's' : ''} found`;
+
+        // Render results table
+        let html = '<table class="be-scraper-table">';
+        html += '<thead><tr><th>Name</th><th>Email</th><th>Details</th></tr></thead>';
+        html += '<tbody>';
+        results.forEach(r => {
+            html += `<tr>
+                <td>${escapeHTML(r.name || 'Unknown')}</td>
+                <td><a href="mailto:${escapeHTML(r.email)}">${escapeHTML(r.email)}</a></td>
+                <td>${escapeHTML(r.detail || '')}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        resultsEl.innerHTML = html;
+
+    } catch (err) {
+        console.error('[BetterEmail] Scraper error:', err);
+        statusEl.className = 'be-scraper-status be-scraper-status-error';
+        statusEl.textContent = "Can't reach server. Is the backend running on localhost:3000?";
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            Find Leads
+        `;
+    }
+}
+
+// Initialize scraper UI alongside existing init
+if (!initScraperUI()) {
+    const scraperObserver = new MutationObserver(() => {
+        if (initScraperUI()) scraperObserver.disconnect();
+    });
+    scraperObserver.observe(document.body || document.documentElement, { childList: true, subtree: true });
+}
+
+
 function renderResults(panel, raw) {
     panel.classList.add("visible");
     panel.innerHTML = "";

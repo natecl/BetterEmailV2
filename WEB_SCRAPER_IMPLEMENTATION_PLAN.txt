@@ -1,0 +1,141 @@
+# Implementation Plan: Web Scraper for Gmail Extension
+
+## Goal Description
+Implement a "Web Scraper" feature within the Gmail extension. This feature allows users to input a natural language goal (e.g., "Find emails of UF Computer Science professors") to find and save contact information.
+
+**Hybrid Strategy**: The system implements a smart caching layer (Supabase) to return results instantly if available. If cached data is missing or stale, it executes a live **AI-driven scraping pipeline** (OpenAI Search → GPT-4o Filter → Firecrawl Scrape) to find fresh data, which is then returned to the user and cached for future use.
+
+## Feature Verification Checklist
+- [x] **Goal Input**: User can input natural language goals (e.g., "Get emails from...").
+- [x] **Search API**: Uses OpenAI (or search tool) to find relevant URLs.
+- [x] **LLM Filtering**: Uses GPT-4o mini to filter URLs (strict rules: top 10, directories, people pages).
+- [x] **Smart Scraping**: Uses Firecrawl to extract precise contact info (Name, Email, Details).
+- [x] **Contextual UI**: Injects a magnifying glass and search panel into the Gmail interface.
+- [x] **Caching Layer**: Stores results in Supabase to save costs and speed up future similar queries.
+
+## User Review Required
+> [!IMPORTANT]
+> **API Keys Required**: This feature requires valid API keys in `.env`:
+> - **OpenAI** (Search & LLM).
+> - **Firecrawl** (Scraping).
+> - **Supabase** (URL & Service Role Key for backend).
+
+> [!NOTE]
+> **Gmail DOM Selectors**: Gmail's class names change dynamically. The implementation will use robust selectors (e.g., `aria-label`, `role`) where possible, but ongoing maintenance might be needed if Gmail updates its UI.
+
+## Proposed Changes
+
+### 1. Database Schema (Supabase)
+We will create three tables to cache discoveries.
+
+#### [NEW] [Supabase Tables]
+Execute the following SQL in Supabase:
+```sql
+-- 1. Cache for Scraped Pages
+create table scraped_pages (
+  url text primary key,
+  domain text not null,
+  last_scraped_at timestamptz default now(),
+  emails jsonb, -- array of extracted email objects
+  text_snippet text
+);
+
+-- 2. Email Leads Directory
+create table email_leads (
+  email text primary key,
+  domain text not null,
+  name text,
+  title text,
+  source_urls jsonb, -- array of urls
+  last_seen_at timestamptz default now()
+);
+
+-- 3. Prompt Cache (Optional but recommended)
+create table prompt_cache (
+  cache_key text primary key, -- sha256(domain + "::" + normalizedPrompt)
+  prompt text,
+  domain text,
+  result_emails jsonb, -- array of email strings
+  created_at timestamptz default now()
+);
+
+-- Indexes for performance
+create index idx_email_leads_domain on email_leads(domain);
+```
+
+### 2. Backend: Scraper Service (`server.js`)
+We will add a new endpoint `/scrape-emails` to the Express backend that implements a "check cache first" strategy.
+
+#### [MODIFY] [server.js](file:///Users/n.chinlue/BetterEmailV2/server.js)
+- **New Dependencies**: `openai`, `firecrawl-app`, `@supabase/supabase-js`.
+- **Endpoint**: `POST /scrape-emails`
+- **Logic Flow**:
+    1.  **Normalize Input**: Lowercase prompt, extract domain (e.g., "UF" -> "ufl.edu").
+    2.  **Check `prompt_cache`**:
+        -   If hit & fresh (< 3 days): Return cached emails immediately.
+    3.  **Check `email_leads`**:
+        -   Query by domain.
+        -   If count > threshold (e.g., 10): Return leads logic.
+    4.  **Fallback: Full Search & Scrape**:
+        -   **Search**: OpenAI Search (via `gpt-4o-mini`) -> Candidate URLs.
+        -   **Filter**: strict filtering (prefer directories/people pages).
+        -   **Scrape**: Firecrawl -> Extract Name, Email, Details.
+        -   **Upsert DB**:
+            -   Save to `scraped_pages`.
+            -   Upsert/Merge to `email_leads`.
+            -   Save to `prompt_cache`.
+    5.  **Response**: Return JSON list `[{ name, email, detail, sourceUrl }, ...]`.
+
+#### [MODIFY] [package.json](file:///Users/n.chinlue/BetterEmailV2/package.json)
+- Add dependencies: `openai`, `firecrawl-app`, `@supabase/supabase-js`.
+- Add devDependencies: `jest`, `supertest`.
+
+### 3. Frontend: Gmail UI Injection (`extension/content.js`)
+Inject a "Magnifying Glass" icon next to the Gmail search bar.
+
+#### [MODIFY] [extension/content.js](file:///Users/n.chinlue/BetterEmailV2/extension/content.js)
+- **Injection Logic**:
+    -   Find the Gmail search bar container.
+    -   Inject icon button.
+- **UI Interaction**:
+    -   Toggle **Search Panel**.
+    -   **Search Panel** UI:
+        -   Input: `Goal`.
+        -   Button: `Find Leads`.
+        -   Status Interface: "Checking Cache..." -> "Searching Web..." -> "Scraping...".
+        -   Results Grid: Display Name, Email, Role.
+- **Network**: `fetch('http://localhost:3000/scrape-emails', ...)`
+
+#### [MODIFY] [extension/content.css](file:///Users/n.chinlue/BetterEmailV2/extension/content.css)
+- Add styles for `.be-scraper-trigger`, `.be-scraper-panel`, `.be-scraper-results`.
+
+### 4. Verification & Testing
+
+#### Automated Tests
+- **Backend (`server.test.js`)**:
+    -   Mock `supabase`, `openai`, `firecrawl`.
+    -   Test "Cache Hit" scenario (should not call OpenAI/Firecrawl).
+    -   Test "Cache Miss" scenario (should flow through full pipeline).
+
+#### Manual Verification
+1.  **Start Server**: `node server.js` with `.env` keys.
+2.  **First Run (Cache Miss)**:
+    -   Query: "Emails of UF professors in CS".
+    -   Verify logs show "Searching...", "Firecrawl...".
+    -   Verify results appear in UI.
+    -   Verify Supabase tables are populated.
+3.  **Second Run (Cache Hit)**:
+    -   Run exact same query.
+    -   Verify logs show "Cache hit" and return instantly.
+
+## Detailed Implementation Steps
+
+1.  **Setup Backend**:
+    -   `npm install openai firecrawl-app @supabase/supabase-js`
+    -   Configure Supabase client in `server.js` (or `db.js`).
+    -   Implement the `scrape-emails` endpoint with the 3-layer cache logic.
+2.  **Setup Frontend**:
+    -   Implement the UI injection and panel logic in `content.js`.
+    -   Add styling in `content.css`.
+3.  **Testing**:
+    -   Run manual verification to ensure data flows correctly from "Web -> Firecrawl -> Supabase -> Extension".

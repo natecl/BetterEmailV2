@@ -871,3 +871,339 @@
         background: #3c4043;
     }
 }
+
+
+/* =========================================================
+   WEB SCRAPER - Trigger Button
+========================================================= */
+
+.be-scraper-trigger {
+    position: fixed;
+    top: 72px;
+    right: 140px;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1px solid #dadce0;
+    border-radius: 20px;
+    background: #fff;
+    cursor: pointer;
+    font-family: 'Google Sans', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: #5f6368;
+    white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.be-scraper-trigger:hover {
+    background: #f8f9fa;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    color: #202124;
+}
+
+.be-scraper-trigger svg {
+    stroke: #5f6368;
+    transition: stroke 0.15s ease;
+}
+
+.be-scraper-trigger:hover svg {
+    stroke: #1a73e8;
+}
+
+
+/* =========================================================
+   WEB SCRAPER - Search Panel
+========================================================= */
+
+.be-scraper-panel {
+    position: fixed;
+    top: 110px;
+    right: 20px;
+    z-index: 10001;
+    width: 420px;
+    max-height: 70vh;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.06);
+    font-family: 'Google Sans', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+    overflow: hidden;
+    display: none;
+    flex-direction: column;
+}
+
+.be-scraper-panel.be-scraper-panel-open {
+    display: flex;
+    animation: be-dropdown-in 0.18s ease;
+}
+
+.be-scraper-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.be-scraper-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1a73e8;
+}
+
+.be-scraper-title svg {
+    stroke: #1a73e8;
+}
+
+.be-scraper-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #9aa0a6;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.be-scraper-close:hover {
+    color: #5f6368;
+    background: #f1f3f4;
+}
+
+.be-scraper-body {
+    padding: 14px 16px 16px;
+    overflow-y: auto;
+    max-height: calc(70vh - 60px);
+}
+
+.be-scraper-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #202124;
+    background: #f8f9fa;
+    outline: none;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+    margin-bottom: 10px;
+}
+
+.be-scraper-input:focus {
+    background: white;
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+}
+
+.be-scraper-input::placeholder {
+    color: #9aa0a6;
+}
+
+.be-scraper-submit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(26, 115, 232, 0.3);
+}
+
+.be-scraper-submit:hover {
+    box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
+    transform: translateY(-1px);
+}
+
+.be-scraper-submit:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+}
+
+
+/* =========================================================
+   WEB SCRAPER - Status Indicator
+========================================================= */
+
+.be-scraper-status {
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    display: none;
+}
+
+.be-scraper-status-loading {
+    display: block;
+    background: #e8f0fe;
+    color: #1a73e8;
+}
+
+.be-scraper-status-success {
+    display: block;
+    background: #e6f4ea;
+    color: #1e8e3e;
+}
+
+.be-scraper-status-error {
+    display: block;
+    background: #fce8e8;
+    color: #c5221f;
+}
+
+
+/* =========================================================
+   WEB SCRAPER - Results Table
+========================================================= */
+
+.be-scraper-results {
+    margin-top: 12px;
+}
+
+.be-scraper-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.be-scraper-table thead th {
+    text-align: left;
+    padding: 8px 10px;
+    background: #f8f9fa;
+    color: #5f6368;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 2px solid #e8eaed;
+}
+
+.be-scraper-table tbody td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #202124;
+    vertical-align: top;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.be-scraper-table tbody tr:hover {
+    background: #f8f9fa;
+}
+
+.be-scraper-table a {
+    color: #1a73e8;
+    text-decoration: none;
+}
+
+.be-scraper-table a:hover {
+    text-decoration: underline;
+}
+
+
+/* =========================================================
+   WEB SCRAPER - Dark Mode
+========================================================= */
+
+@media (prefers-color-scheme: dark) {
+    .be-scraper-trigger {
+        background: #2d2e30;
+        border-color: rgba(255, 255, 255, 0.1);
+        color: #e8eaed;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .be-scraper-trigger:hover {
+        background: #35363a;
+        color: #8ab4f8;
+    }
+
+    .be-scraper-trigger svg {
+        stroke: #e8eaed;
+    }
+
+    .be-scraper-trigger:hover svg {
+        stroke: #8ab4f8;
+    }
+
+    .be-scraper-panel {
+        background: #2d2e30;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    .be-scraper-header {
+        border-bottom-color: #3c4043;
+    }
+
+    .be-scraper-title {
+        color: #8ab4f8;
+    }
+
+    .be-scraper-title svg {
+        stroke: #8ab4f8;
+    }
+
+    .be-scraper-input {
+        background: #35363a;
+        border-color: #5f6368;
+        color: #e8eaed;
+    }
+
+    .be-scraper-input:focus {
+        background: #3c4043;
+        border-color: #8ab4f8;
+    }
+
+    .be-scraper-status-loading {
+        background: rgba(138, 180, 248, 0.15);
+        color: #8ab4f8;
+    }
+
+    .be-scraper-status-success {
+        background: rgba(129, 201, 149, 0.15);
+        color: #81c995;
+    }
+
+    .be-scraper-status-error {
+        background: rgba(242, 139, 130, 0.15);
+        color: #f28b82;
+    }
+
+    .be-scraper-table thead th {
+        background: #35363a;
+        color: #9aa0a6;
+        border-bottom-color: #5f6368;
+    }
+
+    .be-scraper-table tbody td {
+        color: #e8eaed;
+        border-bottom-color: #3c4043;
+    }
+
+    .be-scraper-table tbody tr:hover {
+        background: #35363a;
+    }
+
+    .be-scraper-table a {
+        color: #8ab4f8;
+    }
+}
