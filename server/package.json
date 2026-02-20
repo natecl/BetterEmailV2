@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "test": "jest --verbose"
+    "test": "jest --verbose",
+    "worker": "node workers/indexer.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -15,10 +16,15 @@
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
     "openai": "^4.85.4"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
+    "jest": "^30.2.0",
     "supertest": "^7.0.0"
+  },
+  "overrides": {
+    "minimatch": ">=10.2.1",
+    "glob": ">=11.0.0"
   }
 }

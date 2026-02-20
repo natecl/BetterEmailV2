@@ -1,0 +1,62 @@
+# Claude Code Execution Plan: Enforce Authentication Across All Features & Replace Gmail Search Bar
+
+**Context**:
+The user wants to mandate Google Authentication (via the Supabase integration in the extension popup) before ANY feature of BetterEmail V2 can be used. All injected UIs in Gmail (Lead Finder, Semantic Search, Inline Email Analyzer, Follow-up Reminders) and the popup itself must be locked down until the user successfully signs in.
+
+Additionally, the Semantic Search feature should **no longer be a tab** inside the Lead Finder box. Instead, it should **completely replace the native Gmail search bar**, while keeping the beautiful glowing ring effect around it!
+
+---
+
+## Phase 1: Harden Popup Authentication UI (`client/popup.js` & `client/popup.html`)
+1. **Modify `popup.js -> initAuthUI()`**:
+   - When signed **out** (`!session` or `!session.access_token`):
+     - Show `#be-auth-card`.
+     - Completely hide the main analyzer form/results by setting `document.querySelector(".main-content").style.display = "none"`.
+   - When signed **in**:
+     - Hide `#be-auth-card`.
+     - Show `.main-content` (`display: flex`).
+
+## Phase 2: Create Auth Helpers for Content Scripts (`client/content.js`)
+Because `auth.js` is not injected into the Gmail page, `content.js` must read the session from `chrome.storage.local`.
+1. **Add an Auth Checking Utility**:
+   - Create a function `async function isAuthenticated()` that reads `be_supabase_session` from `chrome.storage.local` and returns `true` only if a valid `access_token` exists.
+   - Add a listener: `chrome.storage.onChanged.addListener` that listens for changes to `"be_supabase_session"`. When the auth state changes, re-trigger UI initializations.
+
+## Phase 3: Lock Down the Lead Finder Panel (`client/content.js`)
+1. **Modify `initScraperUI()`**:
+   - **Remove all the Semantic Search elements** and the `<div class="be-mode-toggles">` that were added previously. The panel should ONLY contain the Lead Finder now.
+   - Before building the inner HTML of `#be-scraper-panel`, await `isAuthenticated()`.
+   - If **unauthenticated**, render a "Locked" state:
+     - Render a message in the body: `"<div class='be-locked-ui'>Please click the BetterEmail extension icon in your toolbar and sign in to unlock Lead Finder.</div>"`
+     - Disable or hide the search inputs and submit buttons.
+
+## Phase 4: Replace Native Gmail Search with Semantic Search (`client/content.js`)
+1. **Identify and Hide the Native Search Bar**:
+   - Gmail's search bar is usually a `<form role="search">` or `<input aria-label="Search">`.
+   - Hide the native input elements within this form (but don't delete the form, as Gmail might break), and inject our custom Semantic Search HTML directly over it.
+2. **Inject Semantic Search HTML**:
+   - Create a new DOM element representing the `"Semantic Search"`.
+   - Add the `<div class="be-search-wrapper">` containing the `be-semantic-input` (and keep the glow ring CSS on it!).
+   - Also append the "Filters" toggle and "Sync" button (perhaps positioning them in a dropdown absolute div beneath the bar).
+3. **Lock Down Semantic Search**:
+   - Like the Lead Finder panel, if `isAuthenticated()` returns false, the injected search bar should have a disabled input and placeholder text saying `"Sign in via extension to unlock Semantic Search"`.
+
+## Phase 5: Lock Down the Inline Compose Analyzer (`client/content.js`)
+1. **Modify the Compose Window injected UI**:
+   - When injecting the analyzer bar below a Gmail compose window, await `isAuthenticated()`.
+   - If **unauthenticated**:
+     - Render the bar, but disable the `<input>` and `<button>`.
+     - Change the placeholder text to: `"Sign in via the extension popup to use AI Analyzer"`.
+     - Change the button text to `"Locked"`.
+
+## Phase 6: Lock Down Follow-Up Reminders
+1. **Background Script (`background.js`) & Content Script**:
+   - Ensure the logic that injects action items or triggers reminders (`chrome.alarms` handlers or DOM polling) aborts early if `isAuthenticated()` returns `false`.
+
+## Verification Steps
+1. Open Gmail while signed out of the BetterEmail extension.
+2. The Gmail search bar should be replaced by our custom Semantic Search bar, wrapped in a glow ring, but the input should be disabled and say "Sign in via extension to unlock".
+3. Open the Lead Finder panel -> Verify it displays the "Please sign in" message.
+4. Open a "Compose" email window -> Verify the injected inline analyzer at the bottom is disabled and instructs the user to sign in.
+5. Click the BetterEmail extension icon and log in.
+6. The `chrome.storage.onChanged` listener should instantly unlock the native search bar replacement, Lead finder, and Inline analyzer without a page refresh.

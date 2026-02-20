@@ -3,7 +3,7 @@
  * Extension Popup Controller
  */
 
-const API_URL = "http://localhost:3000/analyze-email";
+const API_URL = (typeof BE_CONFIG !== 'undefined' ? BE_CONFIG.API_URL : "http://localhost:3000") + "/analyze-email";
 
 /* =====================================================
    DOM REFERENCES
@@ -17,29 +17,14 @@ const resultsContainer = document.getElementById("results-container");
 
 
 /* =====================================================
-   SYSTEM PROMPT
-===================================================== */
-
-const SYSTEM_PROMPT = `You are an expert email analyzer. The user will provide an email they have written and the context/purpose of the email.
-
-Analyze the email and respond with a JSON array. Each element must have:
-- "title"
-- "icon"
-- "content"
-
-Return exactly these 5 sections in order:
-1. Grammar & Spelling — identify any grammar, spelling, or punctuation errors.
-2. Tone & Formality — evaluate whether the tone is appropriate for the given context.
-3. Clarity & Structure — assess how clear and well-organized the email is.
-4. Suggestions — provide specific, actionable improvements.
-5. Overall Verdict — a brief overall assessment.
-
-IMPORTANT: Return ONLY the JSON array.`;
-
-
-/* =====================================================
    UI HELPERS
 ===================================================== */
+
+function escapeHTML(str) {
+    return String(str)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
 function setLoading(isLoading) {
     analyzeBtn.disabled = isLoading;
@@ -49,7 +34,7 @@ function setLoading(isLoading) {
 function showError(message) {
     resultsContainer.innerHTML = `
         <div class="error-card">
-            <span class="error-text">${message}</span>
+            <span class="error-text">${escapeHTML(message)}</span>
         </div>
     `;
 }
@@ -76,10 +61,10 @@ function renderSections(sections) {
 
         card.innerHTML = `
             <div class="section-card-header">
-                <span class="section-icon">${section.icon}</span>
-                <span class="section-title">${section.title}</span>
+                <span class="section-icon">${escapeHTML(section.icon)}</span>
+                <span class="section-title">${escapeHTML(section.title)}</span>
             </div>
-            <div class="section-content">${section.content}</div>
+            <div class="section-content">${escapeHTML(section.content)}</div>
         `;
 
         resultsContainer.appendChild(card);
@@ -88,7 +73,7 @@ function renderSections(sections) {
 
 function renderRawText(text) {
     resultsContainer.innerHTML = `
-        <div class="raw-card">${text}</div>
+        <div class="raw-card">${escapeHTML(text)}</div>
     `;
 }
 
@@ -130,17 +115,15 @@ function tryParseSections(raw) {
 ===================================================== */
 
 async function analyzeEmail(email, context) {
+    const token = typeof getAccessToken === 'function' ? await getAccessToken() : null;
+
+    const headers = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
 
     const response = await fetch(API_URL, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-            email,
-            context,
-            systemPrompt: SYSTEM_PROMPT
-        })
+        headers,
+        body: JSON.stringify({ email, context })
     });
 
     const data = await response.json();
@@ -166,12 +149,6 @@ function formatDueTime(dueTime) {
     if (days >= 1) return { label: `In ${days} day${days > 1 ? "s" : ""}`, overdue: false };
     if (hrs  >= 1) return { label: `In ${hrs} hr${hrs > 1 ? "s" : ""}`,    overdue: false };
     return { label: `In ${mins} min${mins !== 1 ? "s" : ""}`, overdue: false };
-}
-
-function escapeHTML(str) {
-    return String(str)
-        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function dismissReminder(id) {
@@ -262,6 +239,68 @@ function renderReminders(reminders) {
 chrome.storage.local.get("be_reminders", ({ be_reminders = [] }) => {
     renderReminders(be_reminders);
 });
+
+
+/* =====================================================
+   AUTHENTICATION UI
+===================================================== */
+
+async function initAuthUI() {
+    const authCard = document.getElementById("be-auth-card");
+    const userBar = document.getElementById("be-user-bar");
+    const userEmail = document.getElementById("be-user-email");
+    const mainContent = document.querySelector(".main-content");
+
+    // Check if auth.js loaded (BE_CONFIG and getSession exist)
+    if (typeof getSession !== 'function') {
+        // auth.js not loaded — show main content, hide auth card
+        if (authCard) authCard.style.display = "none";
+        if (mainContent) mainContent.style.display = "flex";
+        return;
+    }
+
+    const session = await getSession();
+
+    if (session && session.access_token) {
+        // Signed in
+        if (authCard) authCard.style.display = "none";
+        if (mainContent) mainContent.style.display = "flex";
+        if (userBar) userBar.style.display = "flex";
+        if (userEmail && session.user) {
+            userEmail.textContent = session.user.email || "";
+        }
+    } else {
+        // Signed out
+        if (authCard) authCard.style.display = "flex";
+        if (mainContent) mainContent.style.display = "flex";
+        if (userBar) userBar.style.display = "none";
+    }
+}
+
+// Sign-in handler
+document.getElementById("be-signin-btn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("be-signin-btn");
+    btn.disabled = true;
+    btn.textContent = "Signing in...";
+
+    try {
+        await signInWithGoogle();
+        await initAuthUI();
+    } catch (err) {
+        console.error("Sign-in failed:", err);
+        btn.textContent = "Sign in with Google";
+        btn.disabled = false;
+    }
+});
+
+// Sign-out handler
+document.getElementById("be-signout-btn")?.addEventListener("click", async () => {
+    await signOut();
+    await initAuthUI();
+});
+
+// Initialize auth UI on popup open
+initAuthUI();
 
 
 /* =====================================================

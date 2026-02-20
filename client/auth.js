@@ -1,0 +1,185 @@
+/**
+ * BetterEmail V2 — Supabase Auth Helper
+ *
+ * Uses chrome.identity.launchWebAuthFlow for Google OAuth,
+ * then exchanges the token with Supabase Auth.
+ * Session stored in chrome.storage.local (key: be_supabase_session).
+ */
+
+const AUTH_STORAGE_KEY = 'be_supabase_session';
+
+/**
+ * Get the current stored session (if any).
+ * Returns { access_token, refresh_token, user, provider_token, provider_refresh_token, expires_at } or null.
+ */
+async function getSession() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(AUTH_STORAGE_KEY, (result) => {
+            resolve(result[AUTH_STORAGE_KEY] || null);
+        });
+    });
+}
+
+/**
+ * Save session to chrome.storage.local.
+ */
+async function saveSession(session) {
+    return new Promise((resolve) => {
+        chrome.storage.local.set({ [AUTH_STORAGE_KEY]: session }, resolve);
+    });
+}
+
+/**
+ * Clear session from storage.
+ */
+async function clearSession() {
+    return new Promise((resolve) => {
+        chrome.storage.local.remove(AUTH_STORAGE_KEY, resolve);
+    });
+}
+
+/**
+ * Get a valid Supabase access token, refreshing if expired.
+ */
+async function getAccessToken() {
+    const session = await getSession();
+    if (!session) return null;
+
+    // Check if token is expired (with 60s buffer)
+    const now = Math.floor(Date.now() / 1000);
+    if (session.expires_at && now >= session.expires_at - 60) {
+        const refreshed = await refreshAccessToken(session.refresh_token);
+        return refreshed ? refreshed.access_token : null;
+    }
+
+    return session.access_token;
+}
+
+/**
+ * Refresh the Supabase session using the refresh token.
+ */
+async function refreshAccessToken(refreshToken) {
+    if (!refreshToken) return null;
+
+    try {
+        const response = await fetch(`${BE_CONFIG.SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': BE_CONFIG.SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({ refresh_token: refreshToken })
+        });
+
+        if (!response.ok) {
+            await clearSession();
+            return null;
+        }
+
+        const data = await response.json();
+        const session = {
+            access_token: data.access_token,
+            refresh_token: data.refresh_token,
+            expires_at: data.expires_at,
+            user: data.user,
+            provider_token: data.provider_token || null,
+            provider_refresh_token: data.provider_refresh_token || null
+        };
+
+        await saveSession(session);
+        return session;
+    } catch (err) {
+        console.error('BetterEmail: Token refresh failed', err);
+        await clearSession();
+        return null;
+    }
+}
+
+/**
+ * Sign in with Google via Supabase OAuth + chrome.identity.launchWebAuthFlow.
+ * Returns the session object or throws.
+ */
+async function signInWithGoogle() {
+    const redirectUrl = chrome.identity.getRedirectURL();
+
+    // Build Supabase OAuth URL
+    const authUrl = new URL(`${BE_CONFIG.SUPABASE_URL}/auth/v1/authorize`);
+    authUrl.searchParams.set('provider', 'google');
+    authUrl.searchParams.set('redirect_to', redirectUrl);
+    authUrl.searchParams.set('scopes', 'email profile https://www.googleapis.com/auth/gmail.readonly');
+
+    // Launch Chrome identity flow
+    const responseUrl = await new Promise((resolve, reject) => {
+        chrome.identity.launchWebAuthFlow(
+            { url: authUrl.toString(), interactive: true },
+            (callbackUrl) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message));
+                } else {
+                    resolve(callbackUrl);
+                }
+            }
+        );
+    });
+
+    // Parse the callback URL for tokens
+    const url = new URL(responseUrl);
+
+    // Supabase returns tokens in the hash fragment
+    const hashParams = new URLSearchParams(url.hash.substring(1));
+    const accessToken = hashParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token');
+    const expiresIn = parseInt(hashParams.get('expires_in') || '3600', 10);
+    const providerToken = hashParams.get('provider_token');
+    const providerRefreshToken = hashParams.get('provider_refresh_token');
+
+    if (!accessToken) {
+        throw new Error('No access token received from Supabase');
+    }
+
+    // Fetch user info from Supabase
+    const userResponse = await fetch(`${BE_CONFIG.SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'apikey': BE_CONFIG.SUPABASE_ANON_KEY
+        }
+    });
+
+    const user = userResponse.ok ? await userResponse.json() : null;
+
+    const session = {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+        user,
+        provider_token: providerToken,
+        provider_refresh_token: providerRefreshToken
+    };
+
+    await saveSession(session);
+    return session;
+}
+
+/**
+ * Sign out — clear stored session.
+ */
+async function signOut() {
+    const session = await getSession();
+
+    // Attempt to sign out from Supabase (best-effort)
+    if (session && session.access_token) {
+        try {
+            await fetch(`${BE_CONFIG.SUPABASE_URL}/auth/v1/logout`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'apikey': BE_CONFIG.SUPABASE_ANON_KEY
+                }
+            });
+        } catch {
+            // Ignore errors on sign-out
+        }
+    }
+
+    await clearSession();
+}

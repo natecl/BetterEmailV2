@@ -35,9 +35,9 @@ AI Email Agent & Quality Analyzer: Anthropic Claude 4.5 (Sonnet or Opus)
 
 Why: While Gemini is great for data, Claude is widely considered the "best writer" in 2026. For features like "suggesting changes to be more professional," Claude produces more natural, less "robotic" prose that users actually want to send.
 
-Semantic Search: OpenAI (text-embedding-3-large) + MongoDB Atlas
+Semantic Search: OpenAI (text-embedding-3-small, 1536d) + Supabase pgvector
 
-Why: To make "Email from 2 months ago" work, you don't need a full LLM; you need Embeddings. OpenAI’s embedding models are the industry standard for accuracy. You store these "vector" versions of emails in your existing MongoDB database to keep your tech stack lean.
+Why: To make "Email from 2 months ago" work, you don't need a full LLM; you need Embeddings. OpenAI's embedding models are the industry standard for accuracy. Vectors are stored in Supabase using pgvector for native PostgreSQL integration.
 
 WebScraper for Lead Gen: Firecrawl API
 
@@ -95,13 +95,29 @@ BetterEmailV2/
 ├── server/                          # Backend (Express.js)
 │   ├── package.json                 # Server dependencies
 │   ├── index.js                     # Entry point, API endpoints
+│   ├── middleware/
+│   │   └── auth.js                  # Supabase JWT auth middleware
 │   ├── services/
-│   │   └── scraperService.js        # Web scraper pipeline logic
+│   │   ├── scraperService.js        # Web scraper pipeline logic
+│   │   ├── gmailService.js          # Gmail API ingestion & parsing
+│   │   ├── embeddingService.js      # Text chunking & OpenAI embeddings
+│   │   └── searchService.js         # Vector search & result ranking
+│   ├── workers/
+│   │   └── indexer.js               # Background embedding worker
+│   ├── migrations/
+│   │   └── 001_semantic_search.sql  # Supabase schema migration
 │   ├── __tests__/
-│   │   └── scraper.test.js          # Scraper unit tests (34 tests)
+│   │   ├── scraper.test.js          # Scraper unit tests
+│   │   ├── auth.test.js             # Auth middleware tests
+│   │   ├── gmailService.test.js     # Gmail service tests
+│   │   ├── embeddingService.test.js # Embedding service tests
+│   │   └── searchService.test.js    # Search service tests
 │   └── node_modules/                # (gitignored)
 ├── client/                          # Chrome Extension
 │   ├── manifest.json
+│   ├── config.example.js            # Client config template (copy to config.js)
+│   ├── config.js                    # (gitignored) actual config with keys
+│   ├── auth.js                      # Supabase Google OAuth via chrome.identity
 │   ├── popup.html / popup.js / popup.css
 │   ├── content.js / content.css     # Gmail injection (analyzer + scraper UI)
 │   ├── background.js                # Service worker (reminders)
@@ -118,21 +134,30 @@ BetterEmailV2/
 - **Start server:** `cd server && node index.js`
 - **Run tests:** `cd server && npm test`
 - **Install deps:** `cd server && npm install`
+- **Start indexing worker:** `cd server && npm run worker`
 
 ## API Endpoints
 - `POST /analyze-email` — Email quality analysis (OpenRouter/Gemini)
 - `POST /scrape-emails` — Web scraper for lead generation (OpenAI + Firecrawl + Supabase cache)
+- `POST /gmail/sync` — Gmail email ingestion (requires auth, accepts provider_token)
+- `POST /search` — Semantic email search (requires auth, accepts query + filters)
 
 ## Implemented Features
 - **Email Quality Analyzer** — Inline Gmail compose analyzer with context-aware AI feedback
 - **Follow-up Reminders** — Toast notification after sending, with custom scheduling
 - **Reminders Panel** — Fixed header chip showing active reminders
 - **Web Scraper / Lead Finder** — AI-powered contact discovery with 3-layer caching (prompt_cache → email_leads → live pipeline)
+- **Authentication** — Supabase Google OAuth via chrome.identity, JWT middleware for protected routes
+- **Semantic Search** — Natural language email search using OpenAI embeddings + Supabase pgvector, with Gmail sync, background indexing worker, and search UI in extension popup
 
 ## Database Tables (Supabase)
 - `scraped_pages` — Cache of scraped page data (url PK)
 - `email_leads` — Directory of discovered contacts (email PK)
 - `prompt_cache` — Maps normalized prompts to cached results (cache_key PK)
+- `users` — User profiles with Gmail OAuth tokens (id PK, references auth.users)
+- `gmail_messages` — Email metadata + cleaned body text (unique on user_id + gmail_message_id)
+- `gmail_message_vectors` — Summary + chunk embeddings with vector(1536) for similarity search
+- `indexing_jobs` — Queue for background embedding worker (pending/processing/done/error)
 
 ## Learning
 -Whenever you are given a task update this file to make youself more efficient and information to run better such as context or skills. Include a project structure outline.

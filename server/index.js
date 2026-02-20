@@ -15,25 +15,78 @@ const {
     scrapeEmails,
     upsertResults
 } = require('./services/scraperService');
+const { requireAuth } = require('./middleware/auth');
+const {
+    fetchMessageIds,
+    fetchMessage,
+    extractBodyText,
+    cleanBodyText,
+    computeBodyHash,
+    getHeader,
+    parseFrom,
+    upsertMessage,
+    storeGmailTokens,
+    getGmailTokens
+} = require('./services/gmailService');
+const {
+    embedQuery,
+    vectorSearch,
+    groupAndRankResults
+} = require('./services/searchService');
+
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
+    .split(',')
+    .map(o => o.trim());
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. Chrome extensions, server-to-server)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    }
+}));
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// Rate limiting
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests, please try again later' }
+});
+app.use('/analyze-email', apiLimiter);
+app.use('/scrape-emails', apiLimiter);
+app.use('/gmail/sync', apiLimiter);
+app.use('/search', apiLimiter);
+
 // Email Analyzer endpoint
-app.post('/analyze-email', async (req, res) => {
+app.post('/analyze-email', requireAuth, async (req, res) => {
     try {
-        const { email, context, systemPrompt: clientPrompt } = req.body;
+        const { email, context } = req.body;
 
         if (!email || !context) {
             return res.status(400).json({ error: 'Both email and context are required' });
         }
 
-        const defaultPrompt = `You are an expert email analyzer. The user will provide an email they have written and the context/purpose of the email. Analyze the email and provide actionable feedback on:
+        // Input length validation
+        if (email.length > 10000) {
+            return res.status(400).json({ error: 'Email text must be 10,000 characters or less' });
+        }
+        if (context.length > 2000) {
+            return res.status(400).json({ error: 'Context must be 2,000 characters or less' });
+        }
+
+        const systemPrompt = `You are an expert email analyzer. The user will provide an email they have written and the context/purpose of the email. Analyze the email and provide actionable feedback on:
 
 1. **Grammar & Spelling**: Identify any grammar, spelling, or punctuation errors.
 2. **Tone & Formality**: Evaluate whether the tone is appropriate for the given context.
@@ -41,8 +94,6 @@ app.post('/analyze-email', async (req, res) => {
 4. **Suggestions**: Provide specific, actionable suggestions for improvement.
 
 Be concise but thorough. Format your response with clear sections.`;
-
-        const systemPrompt = clientPrompt || defaultPrompt;
 
         const userMessage = `Context/Purpose: ${context}\n\nEmail to analyze:\n${email}`;
 
@@ -77,12 +128,16 @@ Be concise but thorough. Format your response with clear sections.`;
 });
 
 // Web Scraper endpoint
-app.post('/scrape-emails', async (req, res) => {
+app.post('/scrape-emails', requireAuth, async (req, res) => {
     try {
         const { prompt } = req.body;
 
         if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
             return res.status(400).json({ error: 'A non-empty "prompt" field is required' });
+        }
+
+        if (prompt.length > 1000) {
+            return res.status(400).json({ error: 'Prompt must be 1,000 characters or less' });
         }
 
         // Validate required env vars
@@ -144,6 +199,145 @@ app.post('/scrape-emails', async (req, res) => {
     } catch (error) {
         console.error('Scrape error:', error);
         res.status(500).json({ error: 'Failed to process scraping request' });
+    }
+});
+
+// Gmail Sync endpoint
+app.post('/gmail/sync', requireAuth, async (req, res) => {
+    try {
+        const { provider_token, provider_refresh_token } = req.body;
+
+        if (!provider_token) {
+            return res.status(400).json({ error: 'provider_token is required' });
+        }
+
+        const supabase = createClient(
+            process.env.SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY
+        );
+
+        // Store Gmail tokens for future use
+        if (provider_refresh_token) {
+            await storeGmailTokens(supabase, req.userId, req.userEmail, {
+                access_token: provider_token,
+                refresh_token: provider_refresh_token
+            });
+        }
+
+        // Get user's current history_id for incremental sync
+        const userData = await getGmailTokens(supabase, req.userId);
+        const historyId = userData?.history_id || null;
+
+        // Fetch message IDs from Gmail
+        const { messageIds } = await fetchMessageIds(provider_token, historyId);
+
+        let processed = 0;
+        let queued = 0;
+        let newHistoryId = null;
+
+        for (const msgId of messageIds) {
+            try {
+                const gmailMsg = await fetchMessage(provider_token, msgId);
+                const headers = gmailMsg.payload?.headers || [];
+
+                const subject = getHeader(headers, 'Subject') || '(no subject)';
+                const fromHeader = getHeader(headers, 'From') || '';
+                const toHeader = getHeader(headers, 'To') || '';
+                const { name: fromName, email: fromEmail } = parseFrom(fromHeader);
+
+                const toEmails = toHeader
+                    .split(',')
+                    .map(t => t.trim())
+                    .filter(Boolean);
+
+                const rawBody = extractBodyText(gmailMsg.payload);
+                const bodyText = cleanBodyText(rawBody);
+                const bodyHash = computeBodyHash(bodyText);
+
+                // Track the latest historyId
+                if (gmailMsg.historyId) {
+                    if (!newHistoryId || BigInt(gmailMsg.historyId) > BigInt(newHistoryId)) {
+                        newHistoryId = gmailMsg.historyId;
+                    }
+                }
+
+                const result = await upsertMessage(supabase, req.userId, {
+                    gmailMessageId: msgId,
+                    threadId: gmailMsg.threadId,
+                    subject,
+                    fromName,
+                    fromEmail,
+                    toEmails,
+                    labels: gmailMsg.labelIds || [],
+                    internalDate: new Date(parseInt(gmailMsg.internalDate)).toISOString(),
+                    bodyText,
+                    bodyHash
+                });
+
+                processed++;
+                if (result === 'new' || result === 'changed') queued++;
+            } catch (msgErr) {
+                console.error(`Failed to process message ${msgId}:`, msgErr.message);
+            }
+        }
+
+        // Update history_id for next incremental sync
+        if (newHistoryId) {
+            await supabase.from('users').update({
+                history_id: newHistoryId,
+                updated_at: new Date().toISOString()
+            }).eq('id', req.userId);
+        }
+
+        res.json({ processed, queued, newHistoryId });
+    } catch (error) {
+        console.error('Gmail sync error:', error);
+        res.status(500).json({ error: 'Failed to sync emails' });
+    }
+});
+
+// Semantic Search endpoint
+app.post('/search', requireAuth, async (req, res) => {
+    try {
+        const { query, filters } = req.body;
+
+        if (!query || typeof query !== 'string' || !query.trim()) {
+            return res.status(400).json({ error: 'A non-empty "query" is required' });
+        }
+
+        if (query.length > 500) {
+            return res.status(400).json({ error: 'Query must be 500 characters or less' });
+        }
+
+        const supabase = createClient(
+            process.env.SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY
+        );
+
+        const embeddingApiKey = process.env.OPENAI_EMBEDDING_API_KEY;
+        const isEmbeddingOpenRouter = embeddingApiKey && embeddingApiKey.startsWith('sk-or-v1');
+        const openai = new OpenAI({
+            apiKey: embeddingApiKey,
+            baseURL: isEmbeddingOpenRouter ? "https://openrouter.ai/api/v1" : undefined,
+            defaultHeaders: isEmbeddingOpenRouter ? {
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "BetterEmail V2"
+            } : undefined
+        });
+
+        // Embed the query
+        const queryVector = await embedQuery(openai, query.trim());
+
+        // Run vector search
+        const rawResults = await vectorSearch(supabase, req.userId, queryVector, filters || {});
+
+        // Group, rank, and return
+        const results = groupAndRankResults(rawResults);
+
+        res.json({ results });
+    } catch (error) {
+        console.error('Search error:', error);
+        res.status(500).json({ error: 'Search failed' });
     }
 });
 

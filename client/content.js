@@ -56,14 +56,14 @@ function scanForComposeWindows() {
         'div.editable[contenteditable="true"], ' +
         'div[contenteditable="true"][role="textbox"]'
     );
-    
+
     editors.forEach(editor => {
         // Find the compose container (go up to find the form/dialog)
-        const composeBox = editor.closest('div[role="dialog"]') || 
-                          editor.closest('.M9') ||
-                          editor.closest('form') ||
-                          editor.closest('.nH.Hd');
-        
+        const composeBox = editor.closest('div[role="dialog"]') ||
+            editor.closest('.M9') ||
+            editor.closest('form') ||
+            editor.closest('.nH.Hd');
+
         if (composeBox && !composeBox.dataset.beAttached) {
             console.log("[BetterEmail] Found compose window, attaching analyzer");
             attachAnalyzer(composeBox, editor);
@@ -87,7 +87,7 @@ function findEditorInCompose(composeBox) {
         'div.aoI[contenteditable="true"]',
         'div[contenteditable="true"]'
     ];
-    
+
     // First try within the compose box
     for (const selector of selectors) {
         const editor = composeBox.querySelector(selector);
@@ -96,7 +96,7 @@ function findEditorInCompose(composeBox) {
             return editor;
         }
     }
-    
+
     // If not found, search globally (for cases where DOM structure is different)
     console.log("[BetterEmail] Editor not found in composeBox, searching globally...");
     for (const selector of selectors) {
@@ -110,7 +110,7 @@ function findEditorInCompose(composeBox) {
             }
         }
     }
-    
+
     console.log("[BetterEmail] No editor found anywhere");
     return null;
 }
@@ -119,26 +119,26 @@ function getEditorContent(editor) {
     // Log what we're working with
     console.log("[BetterEmail] Getting content from editor:", editor);
     console.log("[BetterEmail] Editor innerHTML preview:", editor.innerHTML?.substring(0, 200));
-    
+
     // Try multiple ways to get content
     let content = "";
-    
+
     // Method 1: innerText
     content = editor.innerText?.trim() || "";
     console.log("[BetterEmail] innerText result length:", content.length);
     if (content) return content;
-    
+
     // Method 2: textContent
     content = editor.textContent?.trim() || "";
     console.log("[BetterEmail] textContent result length:", content.length);
     if (content) return content;
-    
+
     // Method 3: innerHTML stripped of tags
     const temp = document.createElement("div");
     temp.innerHTML = editor.innerHTML || "";
     content = temp.textContent?.trim() || "";
     console.log("[BetterEmail] innerHTML->textContent result length:", content.length);
-    
+
     return content;
 }
 
@@ -152,7 +152,7 @@ function findAnyVisibleEditor() {
         'div.Am.Al.editable',
         'div.aoI[contenteditable="true"]'
     ];
-    
+
     for (const selector of selectors) {
         const editors = document.querySelectorAll(selector);
         for (const editor of editors) {
@@ -178,10 +178,10 @@ function findAnyVisibleEditor() {
 function attachAnalyzer(composeBox, initialEditor) {
     composeBox.dataset.beAttached = "true";
     attachSendListener(composeBox);
-    
+
     // Store editor reference
     let storedEditor = initialEditor;
-    
+
     // Create the analyzer bar
     const analyzer = document.createElement("div");
     analyzer.className = "be-inline-analyzer";
@@ -209,7 +209,7 @@ function attachAnalyzer(composeBox, initialEditor) {
         </div>
         <div class="be-results-panel"></div>
     `;
-    
+
     // Try to insert after the editor, or at the end of compose box
     const editorWrapper = initialEditor.closest('.Ar') || initialEditor.parentElement;
     if (editorWrapper && editorWrapper.parentElement) {
@@ -217,34 +217,34 @@ function attachAnalyzer(composeBox, initialEditor) {
     } else {
         composeBox.appendChild(analyzer);
     }
-    
+
     console.log("[BetterEmail] Analyzer bar injected");
-    
+
     // Setup click handler
     const analyzeBtn = analyzer.querySelector(".be-analyze-btn");
     const contextInput = analyzer.querySelector(".be-context-input");
     const resultsPanel = analyzer.querySelector(".be-results-panel");
-    
+
     // CRITICAL: Stop Gmail from capturing keyboard events on our input
     contextInput.addEventListener("keydown", (e) => e.stopPropagation());
     contextInput.addEventListener("keyup", (e) => e.stopPropagation());
     contextInput.addEventListener("keypress", (e) => e.stopPropagation());
     contextInput.addEventListener("focus", (e) => e.stopPropagation());
     contextInput.addEventListener("click", (e) => e.stopPropagation());
-    
+
     analyzeBtn.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         // Try stored editor first, then search for it
         let emailText = "";
-        
+
         // Method 1: Use stored editor reference
         if (storedEditor && storedEditor.isConnected) {
             console.log("[BetterEmail] Using stored editor reference");
             emailText = getEditorContent(storedEditor);
         }
-        
+
         // Method 2: Search within compose box
         if (!emailText) {
             console.log("[BetterEmail] Stored editor failed, searching in composeBox");
@@ -254,7 +254,7 @@ function attachAnalyzer(composeBox, initialEditor) {
                 emailText = getEditorContent(foundEditor);
             }
         }
-        
+
         // Method 3: Search globally for any visible editor
         if (!emailText) {
             console.log("[BetterEmail] Still no content, searching globally");
@@ -264,27 +264,27 @@ function attachAnalyzer(composeBox, initialEditor) {
                 emailText = getEditorContent(globalEditor);
             }
         }
-        
+
         const context = contextInput.value.trim();
-        
+
         console.log("[BetterEmail] Final email text length:", emailText.length);
         console.log("[BetterEmail] Context:", context);
-        
+
         if (!emailText) {
             showError(resultsPanel, "Write your email first, then click Analyze.");
             return;
         }
-        
+
         if (!context) {
             showError(resultsPanel, "Add context (e.g., 'job application') for better analysis.");
             return;
         }
-        
+
         // Loading state
         analyzeBtn.disabled = true;
         analyzeBtn.innerHTML = '<div class="be-spinner"></div><span>Analyzing...</span>';
         showLoading(resultsPanel);
-        
+
         try {
             const res = await fetch("http://localhost:3000/analyze-email", {
                 method: "POST",
@@ -295,9 +295,9 @@ function attachAnalyzer(composeBox, initialEditor) {
                     systemPrompt: SYSTEM_PROMPT
                 })
             });
-            
+
             const data = await res.json();
-            
+
             if (res.ok) {
                 renderResults(resultsPanel, data.response);
             } else {
@@ -307,7 +307,7 @@ function attachAnalyzer(composeBox, initialEditor) {
             console.error("[BetterEmail] Error:", err);
             showError(resultsPanel, "Can't reach server. Is the backend running on localhost:3000?");
         }
-        
+
         // Reset button
         analyzeBtn.disabled = false;
         analyzeBtn.innerHTML = `
@@ -631,15 +631,15 @@ function formatPanelTime(dueTime) {
     const diff = dueTime - Date.now();
     if (diff <= 0) return "Overdue";
     const mins = Math.floor(diff / 60000);
-    const hrs  = Math.floor(diff / 3600000);
+    const hrs = Math.floor(diff / 3600000);
     const days = Math.floor(diff / 86400000);
     if (days >= 1) return `In ${days}d`;
-    if (hrs  >= 1) return `In ${hrs}h`;
+    if (hrs >= 1) return `In ${hrs}h`;
     return `In ${mins}m`;
 }
 
 function renderPanelReminders(reminders) {
-    const body  = document.getElementById("be-panel-body");
+    const body = document.getElementById("be-panel-body");
     const badge = document.getElementById("be-panel-badge");
     const panel = document.getElementById("be-reminders-panel");
     if (!body || !badge || !panel) return;
@@ -751,11 +751,27 @@ function initScraperUI() {
                     <circle cx="11" cy="11" r="8"/>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
-                Lead Finder
+                BetterEmail
             </div>
             <button class="be-scraper-close" id="be-scraper-close">&#x2715;</button>
         </div>
-        <div class="be-scraper-body">
+        <div class="be-mode-toggles">
+            <button class="be-mode-btn active" id="be-mode-lead">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                Lead Finder
+            </button>
+            <button class="be-mode-btn" id="be-mode-search">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                Semantic Search
+            </button>
+        </div>
+        <div id="be-lead-container" class="be-scraper-body">
             <input type="text" class="be-scraper-input" id="be-scraper-input"
                    placeholder="e.g. UF Computer Science professors">
             <button class="be-scraper-submit" id="be-scraper-submit">
@@ -768,14 +784,96 @@ function initScraperUI() {
             <div class="be-scraper-status" id="be-scraper-status"></div>
             <div class="be-scraper-results" id="be-scraper-results"></div>
         </div>
+        <div id="be-search-container" class="be-scraper-body" style="display:none;">
+            <div class="be-search-wrapper" id="be-search-wrapper">
+                <input type="text" class="be-scraper-input" id="be-semantic-input"
+                       placeholder='e.g. "Email from Nathan about club opportunity"'>
+            </div>
+            <div class="be-semantic-filters">
+                <button type="button" class="be-semantic-filter-toggle" id="be-semantic-filter-toggle">Filters</button>
+                <div class="be-semantic-filter-fields" id="be-semantic-filter-fields" style="display:none;">
+                    <input type="text" id="be-semantic-filter-from" class="be-scraper-input be-semantic-filter-input" placeholder="From (email)">
+                    <input type="date" id="be-semantic-filter-after" class="be-scraper-input be-semantic-filter-input" placeholder="After">
+                    <input type="date" id="be-semantic-filter-before" class="be-scraper-input be-semantic-filter-input" placeholder="Before">
+                </div>
+            </div>
+            <div class="be-semantic-actions">
+                <button class="be-scraper-submit" id="be-semantic-submit">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    Search
+                </button>
+                <button class="be-semantic-sync-btn" id="be-semantic-sync" title="Sync emails from Gmail">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <polyline points="1 20 1 14 7 14"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                    Sync
+                </button>
+            </div>
+            <div id="be-semantic-sync-status" class="be-scraper-status"></div>
+            <div id="be-semantic-results" class="be-semantic-results"></div>
+        </div>
     `;
     document.body.appendChild(panel);
+
+    // Mode toggle logic
+    const leadContainer = panel.querySelector('#be-lead-container');
+    const searchContainer = panel.querySelector('#be-search-container');
+    const modeLeadBtn = panel.querySelector('#be-mode-lead');
+    const modeSearchBtn = panel.querySelector('#be-mode-search');
+
+    modeLeadBtn.addEventListener('click', () => {
+        modeLeadBtn.classList.add('active');
+        modeSearchBtn.classList.remove('active');
+        leadContainer.style.display = 'block';
+        searchContainer.style.display = 'none';
+    });
+
+    modeSearchBtn.addEventListener('click', () => {
+        modeSearchBtn.classList.add('active');
+        modeLeadBtn.classList.remove('active');
+        searchContainer.style.display = 'block';
+        leadContainer.style.display = 'none';
+    });
 
     // Stop Gmail from capturing keyboard events
     const scraperInput = panel.querySelector('#be-scraper-input');
     ['keydown', 'keyup', 'keypress', 'focus', 'click'].forEach(evt => {
         scraperInput.addEventListener(evt, e => e.stopPropagation());
     });
+
+    // Stop Gmail keyboard capture on semantic search inputs
+    const semanticInput = panel.querySelector('#be-semantic-input');
+    ['keydown', 'keyup', 'keypress', 'focus', 'click'].forEach(evt => {
+        semanticInput.addEventListener(evt, e => e.stopPropagation());
+    });
+
+    // Filter toggle
+    panel.querySelector('#be-semantic-filter-toggle')?.addEventListener('click', () => {
+        const fields = panel.querySelector('#be-semantic-filter-fields');
+        if (fields) fields.style.display = fields.style.display === 'none' ? 'flex' : 'none';
+    });
+
+    // Stop keyboard capture on filter inputs
+    panel.querySelectorAll('.be-semantic-filter-input').forEach(el => {
+        ['keydown', 'keyup', 'keypress', 'focus', 'click'].forEach(evt => {
+            el.addEventListener(evt, e => e.stopPropagation());
+        });
+    });
+
+    // Semantic search submit
+    panel.querySelector('#be-semantic-submit')?.addEventListener('click', () => handleSemanticSearch());
+    semanticInput.addEventListener('keydown', e => {
+        e.stopPropagation();
+        if (e.key === 'Enter') handleSemanticSearch();
+    });
+
+    // Sync button
+    panel.querySelector('#be-semantic-sync')?.addEventListener('click', () => handleSemanticSync());
 
     // Toggle panel and position it below the trigger
     trigger.addEventListener('click', e => {
@@ -858,7 +956,7 @@ async function handleScraperSubmit() {
 
         // Show source info
         const sourceLabel = source === 'cache' ? 'From cache' :
-                           source === 'leads_cache' ? 'From saved leads' : 'Live results';
+            source === 'leads_cache' ? 'From saved leads' : 'Live results';
         statusEl.className = 'be-scraper-status be-scraper-status-success';
         statusEl.textContent = `${sourceLabel} — ${results.length} contact${results.length !== 1 ? 's' : ''} found`;
 
@@ -892,6 +990,183 @@ async function handleScraperSubmit() {
     }
 }
 
+/* =========================================================
+   SEMANTIC SEARCH (Gmail content script)
+========================================================= */
+
+function getApiBase() {
+    return typeof BE_CONFIG !== 'undefined' ? BE_CONFIG.API_URL : 'http://localhost:3000';
+}
+
+/**
+ * Get a valid access token. In the content script context, auth.js functions
+ * are not directly available, so we read from chrome.storage.local.
+ */
+async function getContentAccessToken() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get('be_supabase_session', (result) => {
+            const session = result.be_supabase_session || null;
+            if (!session) return resolve(null);
+            resolve(session.access_token || null);
+        });
+    });
+}
+
+async function getContentSession() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get('be_supabase_session', (result) => {
+            resolve(result.be_supabase_session || null);
+        });
+    });
+}
+
+async function handleSemanticSearch() {
+    const queryInput = document.getElementById('be-semantic-input');
+    const resultsContainer = document.getElementById('be-semantic-results');
+    const submitBtn = document.getElementById('be-semantic-submit');
+    const searchWrapper = document.getElementById('be-search-wrapper');
+
+    const query = queryInput?.value?.trim();
+    if (!query) return;
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<div class="be-spinner"></div><span>Searching...</span>';
+    resultsContainer.innerHTML = '<div class="be-scraper-status be-scraper-status-loading" style="display:block;">Searching your emails...</div>';
+    searchWrapper?.classList.add('is-searching');
+
+    try {
+        const token = await getContentAccessToken();
+        if (!token) {
+            resultsContainer.innerHTML = '<div class="be-scraper-status be-scraper-status-error" style="display:block;">Please sign in via the BetterEmail popup first.</div>';
+            return;
+        }
+
+        const filters = {};
+        const fromVal = document.getElementById('be-semantic-filter-from')?.value?.trim();
+        const afterVal = document.getElementById('be-semantic-filter-after')?.value;
+        const beforeVal = document.getElementById('be-semantic-filter-before')?.value;
+
+        if (fromVal) filters.from = fromVal;
+        if (afterVal) filters.after = new Date(afterVal).toISOString();
+        if (beforeVal) filters.before = new Date(beforeVal).toISOString();
+
+        const response = await fetch(`${getApiBase()}/search`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ query, filters })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            resultsContainer.innerHTML = `<div class="be-scraper-status be-scraper-status-error" style="display:block;">${escapeHTML(data.error || 'Search failed')}</div>`;
+            return;
+        }
+
+        renderSemanticResults(resultsContainer, data.results);
+    } catch (err) {
+        resultsContainer.innerHTML = `<div class="be-scraper-status be-scraper-status-error" style="display:block;">Search failed: ${escapeHTML(err.message)}</div>`;
+    } finally {
+        submitBtn.disabled = false;
+        searchWrapper?.classList.remove('is-searching');
+        submitBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"/>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            Search
+        `;
+    }
+}
+
+function renderSemanticResults(container, results) {
+    if (!results || results.length === 0) {
+        container.innerHTML = '<div class="be-semantic-empty">No results found. Try a different query or sync more emails.</div>';
+        return;
+    }
+
+    container.innerHTML = '';
+
+    results.forEach(r => {
+        const date = r.internal_date
+            ? new Date(r.internal_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : '';
+
+        const from = r.from_name
+            ? `${escapeHTML(r.from_name)} <${escapeHTML(r.from_email)}>`
+            : escapeHTML(r.from_email || 'Unknown');
+
+        const gmailUrl = r.thread_id
+            ? `https://mail.google.com/mail/u/0/#inbox/${r.thread_id}`
+            : '#';
+
+        const item = document.createElement('div');
+        item.className = 'be-semantic-result-item';
+        item.innerHTML = `
+            <div class="be-semantic-result-header">
+                <span class="be-semantic-result-from">${from}</span>
+                <span class="be-semantic-result-date">${escapeHTML(date)}</span>
+            </div>
+            <div class="be-semantic-result-subject">${escapeHTML(r.subject || '(no subject)')}</div>
+            <div class="be-semantic-result-snippet">${escapeHTML(r.snippet || '')}</div>
+            <a href="${escapeHTML(gmailUrl)}" target="_blank" class="be-semantic-result-open">Open in Gmail</a>
+        `;
+
+        container.appendChild(item);
+    });
+}
+
+async function handleSemanticSync() {
+    const syncBtn = document.getElementById('be-semantic-sync');
+    const syncStatus = document.getElementById('be-semantic-sync-status');
+
+    syncBtn.disabled = true;
+    syncStatus.style.display = 'block';
+    syncStatus.textContent = 'Syncing emails...';
+    syncStatus.className = 'be-scraper-status be-scraper-status-loading';
+
+    try {
+        const session = await getContentSession();
+        if (!session || !session.access_token) {
+            syncStatus.textContent = 'Please sign in via the BetterEmail popup first.';
+            syncStatus.className = 'be-scraper-status be-scraper-status-error';
+            return;
+        }
+
+        const response = await fetch(`${getApiBase()}/gmail/sync`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({
+                provider_token: session.provider_token,
+                provider_refresh_token: session.provider_refresh_token
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            syncStatus.textContent = data.error || 'Sync failed';
+            syncStatus.className = 'be-scraper-status be-scraper-status-error';
+            return;
+        }
+
+        syncStatus.textContent = `Synced ${data.processed} emails, ${data.queued} queued for indexing.`;
+        syncStatus.className = 'be-scraper-status be-scraper-status-success';
+    } catch (err) {
+        syncStatus.textContent = `Sync failed: ${err.message}`;
+        syncStatus.className = 'be-scraper-status be-scraper-status-error';
+    } finally {
+        syncBtn.disabled = false;
+    }
+}
+
+
 // Initialize scraper UI — keep observing since Gmail may re-render the header on navigation
 const scraperObserver = new MutationObserver(() => {
     initScraperUI();
@@ -907,23 +1182,23 @@ if (!initScraperUI()) {
 function renderResults(panel, raw) {
     panel.classList.add("visible");
     panel.innerHTML = "";
-    
+
     let jsonStr = raw.trim();
     if (jsonStr.startsWith("```")) {
         jsonStr = jsonStr.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
     }
-    
+
     try {
         const sections = JSON.parse(jsonStr);
-        
+
         const grid = document.createElement("div");
         grid.className = "be-results-grid";
-        
+
         sections.forEach((s, i) => {
             const card = document.createElement("div");
             card.className = "be-result-card";
             card.style.animationDelay = `${i * 0.08}s`;
-            
+
             // Color coding
             let accent = "";
             const title = s.title.toLowerCase();
@@ -932,9 +1207,9 @@ function renderResults(panel, raw) {
             else if (title.includes("clarity")) accent = "accent-cyan";
             else if (title.includes("suggestion")) accent = "accent-yellow";
             else if (title.includes("verdict")) accent = "accent-green";
-            
+
             if (accent) card.classList.add(accent);
-            
+
             card.innerHTML = `
                 <div class="be-card-header">
                     <span class="be-card-icon">${s.icon}</span>
@@ -942,10 +1217,10 @@ function renderResults(panel, raw) {
                 </div>
                 <div class="be-card-content">${s.content}</div>
             `;
-            
+
             grid.appendChild(card);
         });
-        
+
         // Close button
         const closeBtn = document.createElement("button");
         closeBtn.className = "be-close-results";
@@ -960,10 +1235,10 @@ function renderResults(panel, raw) {
             panel.classList.remove("visible");
             panel.innerHTML = "";
         });
-        
+
         panel.appendChild(grid);
         panel.appendChild(closeBtn);
-        
+
     } catch (e) {
         panel.innerHTML = `<div class="be-raw-result">${raw}</div>`;
     }
