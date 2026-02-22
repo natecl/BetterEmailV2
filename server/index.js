@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -10,8 +10,7 @@ const {
     generateCacheKey,
     checkPromptCache,
     checkEmailLeads,
-    searchForUrls,
-    filterUrls,
+    searchWithFirecrawl,
     scrapeEmails,
     upsertResults
 } = require('./services/scraperService');
@@ -143,18 +142,6 @@ app.post('/scrape-emails', requireAuth, async (req, res) => {
             process.env.SUPABASE_SERVICE_ROLE_KEY
         );
 
-        const apiKey = process.env.OpenAI_Search_4oMini_Api_Key;
-        const isOpenRouter = apiKey && apiKey.startsWith('sk-or-v1');
-
-        const openai = new OpenAI({
-            apiKey: apiKey,
-            baseURL: isOpenRouter ? "https://openrouter.ai/api/v1" : undefined,
-            defaultHeaders: isOpenRouter ? {
-                "HTTP-Referer": "http://localhost:3000", // Required by OpenRouter
-                "X-Title": "BetterEmail V2" // Optional
-            } : undefined
-        });
-
         const firecrawl = new FirecrawlApp({
             apiKey: process.env.Firecrawl_Api_Key
         });
@@ -175,13 +162,12 @@ app.post('/scrape-emails', requireAuth, async (req, res) => {
             return res.json({ results: existingLeads, source: 'leads_cache' });
         }
 
-        // Step 4: Full pipeline - Search → Filter → Scrape
-        const candidateUrls = await searchForUrls(openai, prompt);
-        const filteredUrls = await filterUrls(openai, candidateUrls, prompt);
-        const scrapedResults = await scrapeEmails(firecrawl, filteredUrls);
+        // Step 4: Full pipeline - Firecrawl Search → Scrape
+        const searchedUrls = await searchWithFirecrawl(firecrawl, prompt);
+        const scrapedResults = await scrapeEmails(firecrawl, searchedUrls);
 
         // Step 5: Save results to database
-        await upsertResults(supabase, domain, normalized, cacheKey, scrapedResults, filteredUrls);
+        await upsertResults(supabase, domain, normalized, cacheKey, scrapedResults, searchedUrls);
 
         res.json({ results: scrapedResults, source: 'live' });
     } catch (error) {

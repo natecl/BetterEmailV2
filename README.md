@@ -45,3 +45,68 @@ Why: Traditional scraping is brittle. Firecrawl is an "AI-first" scraper that ca
 Reply & Follow-up Reminders: Gemini 2.5 Flash (Function Calling)
 
 Why: These features require "logic" (checking dates and reply status) rather than "creativity." Gemini’s Function Calling capability allows your Node.js backend to ask the AI, "Should I remind the user about this?" and get a simple "Yes/No" or a drafted nudge.
+
+---
+
+## How to Run
+
+### Prerequisites
+- Node.js (v18+)
+- A Supabase project with pgvector enabled
+- Google Cloud project with Gmail API enabled
+- API keys for OpenAI, Firecrawl, and OpenRouter/Gemini
+
+### 1. Clone & Configure Environment
+
+```bash
+git clone <repo-url>
+cd BetterEmailV2
+cp .env.example server/.env
+# Fill in all required values in server/.env
+```
+
+### 2. Install Server Dependencies
+
+```bash
+cd server
+npm install
+```
+
+### 3. Run Database Migrations
+
+Apply the SQL migration in Supabase’s SQL editor:
+
+```
+server/migrations/001_semantic_search.sql
+```
+
+### 4. Start the Backend Server
+
+```bash
+cd server
+node index.js
+# Server runs on http://localhost:3000 by default
+```
+
+### 5. Start the Background Indexing Worker (optional)
+
+In a separate terminal, run the embedding worker to index Gmail messages:
+
+```bash
+cd server
+npm run worker
+```
+
+### 6. Load the Chrome Extension
+
+1. Open Chrome and go to `chrome://extensions`
+2. Enable **Developer mode** (top right)
+3. Click **Load unpacked** and select the `client/` folder
+4. Copy `client/config.example.js` to `client/config.js` and fill in your Supabase URL and anon key
+
+### 7. Run Tests
+
+```bash
+cd server
+npm test
+```

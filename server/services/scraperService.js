@@ -95,84 +95,16 @@ async function checkEmailLeads(supabase, domain) {
 }
 
 /**
- * Use OpenAI web search to find candidate URLs for the given prompt.
- * Returns array of URL strings.
+ * Use Firecrawl's web search to find relevant URLs for the given prompt.
+ * Returns array of URL strings from real search results.
  */
-async function searchForUrls(openai, prompt) {
-    const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-            {
-                role: 'system',
-                content: 'You are a research assistant. Given a user query about finding contact information, return a JSON array of up to 20 relevant URLs that are likely to contain directories, faculty pages, or people listings. Return ONLY a JSON array of strings, no other text.'
-            },
-            {
-                role: 'user',
-                content: `Find web pages that would contain contact emails for: ${prompt}`
-            }
-        ],
-        temperature: 0.3
-    });
-
-    const content = response.choices[0].message.content.trim();
-
-    try {
-        // Try to parse as JSON directly
-        let urls = JSON.parse(content);
-        if (Array.isArray(urls)) {
-            return urls.filter(u => typeof u === 'string' && u.startsWith('http'));
-        }
-    } catch {
-        // Try to extract URLs from text
-        const urlRegex = /https?:\/\/[^\s"',\]]+/g;
-        const matches = content.match(urlRegex);
-        return matches || [];
-    }
-
-    return [];
-}
-
-/**
- * Use GPT-4o-mini to filter URLs down to the top 10 most likely
- * directory/people pages.
- */
-async function filterUrls(openai, urls, prompt) {
-    if (!urls || urls.length === 0) return [];
-    if (urls.length <= 10) return urls;
-
-    const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-            {
-                role: 'system',
-                content: `You are a URL filter. Given a list of URLs and a search goal, select the top 10 URLs most likely to contain people directories, faculty listings, or contact pages with email addresses. Prefer:
-1. University directory/people pages
-2. Department faculty listings
-3. Lab/research group pages
-4. Staff directories
-Return ONLY a JSON array of the selected URL strings, no other text.`
-            },
-            {
-                role: 'user',
-                content: `Goal: ${prompt}\n\nURLs to filter:\n${JSON.stringify(urls)}`
-            }
-        ],
-        temperature: 0.1
-    });
-
-    const content = response.choices[0].message.content.trim();
-
-    try {
-        const filtered = JSON.parse(content);
-        if (Array.isArray(filtered)) {
-            return filtered.filter(u => typeof u === 'string' && u.startsWith('http')).slice(0, 10);
-        }
-    } catch {
-        // Fall back to first 10 URLs
-        return urls.slice(0, 10);
-    }
-
-    return urls.slice(0, 10);
+async function searchWithFirecrawl(firecrawl, prompt) {
+    const searchQuery = `${prompt} email contact faculty directory`;
+    const results = await firecrawl.search(searchQuery, { limit: 10 });
+    if (!results.success || !results.data) return [];
+    return results.data
+        .map(r => r.url)
+        .filter(u => typeof u === 'string' && u.startsWith('http'));
 }
 
 /**
@@ -194,7 +126,15 @@ async function scrapeEmails(firecrawl, urls) {
             if (!scrapeResult.success || !scrapeResult.markdown) continue;
 
             const markdown = scrapeResult.markdown;
-            const foundEmails = markdown.match(emailRegex) || [];
+
+            // Deobfuscate common email obfuscation patterns before matching
+            const deobfuscated = markdown
+                .replace(/\s*\[at\]\s*/gi, '@')
+                .replace(/\s*\(at\)\s*/gi, '@')
+                .replace(/\s*\[dot\]\s*/gi, '.')
+                .replace(/\s*\(dot\)\s*/gi, '.');
+
+            const foundEmails = deobfuscated.match(emailRegex) || [];
 
             // Deduplicate emails from this page
             const uniqueEmails = [...new Set(foundEmails)];
@@ -204,8 +144,8 @@ async function scrapeEmails(firecrawl, urls) {
                 if (/^(info|contact|admin|support|webmaster|noreply|no-reply)@/i.test(email)) continue;
 
                 // Try to extract name context around the email
-                const emailIndex = markdown.indexOf(email);
-                const surroundingText = markdown.substring(
+                const emailIndex = deobfuscated.indexOf(email);
+                const surroundingText = deobfuscated.substring(
                     Math.max(0, emailIndex - 200),
                     Math.min(markdown.length, emailIndex + 200)
                 );
@@ -315,8 +255,7 @@ module.exports = {
     generateCacheKey,
     checkPromptCache,
     checkEmailLeads,
-    searchForUrls,
-    filterUrls,
+    searchWithFirecrawl,
     scrapeEmails,
     upsertResults
 };

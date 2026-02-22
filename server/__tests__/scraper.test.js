@@ -3,8 +3,7 @@ const {
     generateCacheKey,
     checkPromptCache,
     checkEmailLeads,
-    searchForUrls,
-    filterUrls,
+    searchWithFirecrawl,
     scrapeEmails,
     upsertResults
 } = require('../services/scraperService');
@@ -40,25 +39,14 @@ function mockSupabase(overrides = {}) {
     };
 }
 
-function mockOpenAI(responseContent) {
-    return {
-        chat: {
-            completions: {
-                create: jest.fn().mockResolvedValue({
-                    choices: [{ message: { content: responseContent } }]
-                })
-            }
-        }
-    };
-}
-
-function mockFirecrawl(results) {
+function mockFirecrawl(results, searchData = []) {
     return {
         scrapeUrl: jest.fn().mockImplementation((url) => {
             const result = results[url];
             if (result) return Promise.resolve(result);
             return Promise.resolve({ success: false });
-        })
+        }),
+        search: jest.fn().mockResolvedValue({ success: true, data: searchData })
     };
 }
 
@@ -179,68 +167,50 @@ describe('checkEmailLeads', () => {
 
 
 // =========================================================
-// searchForUrls
+// searchWithFirecrawl
 // =========================================================
 
-describe('searchForUrls', () => {
-    test('parses JSON array response from OpenAI', async () => {
-        const urls = ['https://cise.ufl.edu/people', 'https://ufl.edu/directory'];
-        const openai = mockOpenAI(JSON.stringify(urls));
+describe('searchWithFirecrawl', () => {
+    test('returns URLs from Firecrawl search results', async () => {
+        const searchData = [
+            { url: 'https://cis.fiu.edu/faculty-staff/' },
+            { url: 'https://cs.ufl.edu/people/' }
+        ];
+        const firecrawl = mockFirecrawl({}, searchData);
 
-        const result = await searchForUrls(openai, 'UF CS professors');
-        expect(result).toEqual(urls);
+        const result = await searchWithFirecrawl(firecrawl, 'FIU CS professors');
+        expect(result).toEqual(['https://cis.fiu.edu/faculty-staff/', 'https://cs.ufl.edu/people/']);
+        expect(firecrawl.search).toHaveBeenCalledWith(
+            'FIU CS professors email contact faculty directory',
+            { limit: 10 }
+        );
     });
 
-    test('extracts URLs from non-JSON text response', async () => {
-        const openai = mockOpenAI('Here are some URLs: https://example.com/dir and https://test.com/people');
-        const result = await searchForUrls(openai, 'some query');
-        expect(result).toContain('https://example.com/dir');
-        expect(result).toContain('https://test.com/people');
-    });
-
-    test('filters out non-http strings', async () => {
-        const openai = mockOpenAI(JSON.stringify(['https://valid.com', 'not-a-url', 'ftp://wrong']));
-        const result = await searchForUrls(openai, 'query');
-        expect(result).toEqual(['https://valid.com']);
-    });
-});
-
-
-// =========================================================
-// filterUrls
-// =========================================================
-
-describe('filterUrls', () => {
-    test('returns all URLs if <= 10', async () => {
-        const urls = ['https://a.com', 'https://b.com'];
-        const openai = mockOpenAI('[]');
-        const result = await filterUrls(openai, urls, 'query');
-        expect(result).toEqual(urls);
-        expect(openai.chat.completions.create).not.toHaveBeenCalled();
-    });
-
-    test('returns empty array for empty input', async () => {
-        const openai = mockOpenAI('[]');
-        const result = await filterUrls(openai, [], 'query');
+    test('returns empty array when search returns no results', async () => {
+        const firecrawl = mockFirecrawl({}, []);
+        const result = await searchWithFirecrawl(firecrawl, 'obscure query');
         expect(result).toEqual([]);
     });
 
-    test('calls OpenAI and returns filtered URLs when > 10', async () => {
-        const manyUrls = Array.from({ length: 15 }, (_, i) => `https://site${i}.com`);
-        const filtered = manyUrls.slice(0, 5);
-        const openai = mockOpenAI(JSON.stringify(filtered));
-
-        const result = await filterUrls(openai, manyUrls, 'query');
-        expect(result).toEqual(filtered);
-        expect(openai.chat.completions.create).toHaveBeenCalled();
+    test('returns empty array when search fails', async () => {
+        const firecrawl = {
+            scrapeUrl: jest.fn(),
+            search: jest.fn().mockResolvedValue({ success: false, data: null })
+        };
+        const result = await searchWithFirecrawl(firecrawl, 'query');
+        expect(result).toEqual([]);
     });
 
-    test('falls back to first 10 URLs on parse error', async () => {
-        const manyUrls = Array.from({ length: 15 }, (_, i) => `https://site${i}.com`);
-        const openai = mockOpenAI('invalid json response');
+    test('filters out non-http URLs from results', async () => {
+        const searchData = [
+            { url: 'https://valid.com/dir' },
+            { url: 'not-a-url' },
+            { url: null }
+        ];
+        const firecrawl = mockFirecrawl({}, searchData);
 
-        const result = await filterUrls(openai, manyUrls, 'query');
-        expect(result).toEqual(manyUrls.slice(0, 10));
+        const result = await searchWithFirecrawl(firecrawl, 'query');
+        expect(result).toEqual(['https://valid.com/dir']);
     });
 });
 
@@ -293,6 +263,19 @@ describe('scrapeEmails', () => {
         expect(result.length).toBe(1);
     });
 
+    test('deobfuscates [at] and [dot] patterns before matching', async () => {
+        const firecrawl = mockFirecrawl({
+            'https://example.com/dir': {
+                success: true,
+                markdown: 'Dr. Jane Smith\nAssistant Professor\njane.smith [at] example [dot] com'
+            }
+        });
+
+        const result = await scrapeEmails(firecrawl, ['https://example.com/dir']);
+        expect(result.length).toBe(1);
+        expect(result[0].email).toBe('jane.smith@example.com');
+    });
+
     test('continues scraping if one URL fails', async () => {
         const firecrawl = {
             scrapeUrl: jest.fn()
@@ -335,12 +318,11 @@ describe('upsertResults', () => {
 // =========================================================
 
 describe('Full pipeline', () => {
-    test('cache hit returns immediately without calling OpenAI/Firecrawl', async () => {
+    test('cache hit returns immediately without calling Firecrawl', async () => {
         const cachedEmails = [{ name: 'Cached', email: 'cached@ufl.edu', detail: '', sourceUrl: '' }];
         const supabase = mockSupabase({
             selectData: { result_emails: cachedEmails }
         });
-        const openai = mockOpenAI('[]');
         const firecrawl = mockFirecrawl({});
 
         // Simulate the pipeline
@@ -349,12 +331,12 @@ describe('Full pipeline', () => {
         const cached = await checkPromptCache(supabase, cacheKey);
 
         expect(cached).toEqual(cachedEmails);
-        // OpenAI and Firecrawl should NOT be called
-        expect(openai.chat.completions.create).not.toHaveBeenCalled();
+        // Firecrawl should NOT be called
+        expect(firecrawl.search).not.toHaveBeenCalled();
         expect(firecrawl.scrapeUrl).not.toHaveBeenCalled();
     });
 
-    test('cache miss runs full pipeline', async () => {
+    test('cache miss runs full pipeline with Firecrawl search', async () => {
         // Cache miss
         const supabaseMiss = mockSupabase({ selectData: null, selectError: { code: 'PGRST116' } });
 
@@ -363,23 +345,19 @@ describe('Full pipeline', () => {
         const cached = await checkPromptCache(supabaseMiss, cacheKey);
         expect(cached).toBeNull();
 
-        // Should proceed to search
-        const openai = mockOpenAI(JSON.stringify(['https://cise.ufl.edu/people']));
-        const urls = await searchForUrls(openai, 'UF CS professors');
-        expect(urls.length).toBeGreaterThan(0);
-
-        // Filter (only 1 URL, under threshold)
-        const filtered = await filterUrls(openai, urls, 'UF CS professors');
-        expect(filtered.length).toBeGreaterThan(0);
-
-        // Scrape
+        // Firecrawl search returns real URLs
+        const searchData = [{ url: 'https://cise.ufl.edu/people' }];
         const firecrawl = mockFirecrawl({
             'https://cise.ufl.edu/people': {
                 success: true,
                 markdown: '**Dr. Alan Turing**\nProfessor\nturing@cise.ufl.edu'
             }
-        });
-        const results = await scrapeEmails(firecrawl, filtered);
+        }, searchData);
+
+        const urls = await searchWithFirecrawl(firecrawl, 'UF CS professors');
+        expect(urls.length).toBeGreaterThan(0);
+
+        const results = await scrapeEmails(firecrawl, urls);
         expect(results.length).toBeGreaterThan(0);
         expect(results[0].email).toBe('turing@cise.ufl.edu');
     });
