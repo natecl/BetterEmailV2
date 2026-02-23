@@ -947,7 +947,9 @@ function initScraperUI() {
     // Position the trigger to the right of the search bar
     function positionTrigger() {
         const rect = searchForm.getBoundingClientRect();
-        trigger.style.top = (rect.top + (rect.height / 2) - 20) + 'px';
+        // Use a fixed offset from the top instead of calculating based on height
+        // to prevent the icon from moving down when the search bar expands.
+        trigger.style.top = (rect.top + 4) + 'px';
         trigger.style.left = (rect.right + 56) + 'px';
     }
 
@@ -1324,13 +1326,9 @@ async function getContentSession() {
 async function handleSemanticSearch() {
     const queryInput = document.querySelector('form[role="search"] input');
     const resultsContainer = document.getElementById('be-semantic-results');
-    const submitBtn = document.getElementById('be-semantic-submit');
 
     const query = queryInput?.value?.trim();
     if (!query) return;
-
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<div class="be-spinner"></div><span>Searching...</span>';
     // Position results dropdown below the overlay
     const overlayEl = document.getElementById('be-gmail-search-overlay');
     if (overlayEl) {
@@ -1377,15 +1375,7 @@ async function handleSemanticSearch() {
     } catch (err) {
         resultsContainer.innerHTML = `<div class="be-scraper-status be-scraper-status-error" style="display:block;">Search failed: ${escapeHTML(err.message)}</div>`;
     } finally {
-        submitBtn.disabled = false;
         if (overlayEl) overlayEl.classList.remove('is-searching');
-        submitBtn.innerHTML = `
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"/>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            Search
-        `;
     }
 }
 
@@ -1427,10 +1417,7 @@ function renderSemanticResults(container, results) {
 }
 
 async function handleSemanticSync() {
-    const syncBtn = document.getElementById('be-semantic-sync');
     const syncStatus = document.getElementById('be-semantic-sync-status');
-
-    syncBtn.disabled = true;
     // Position sync status below the overlay
     const overlayEl = document.getElementById('be-gmail-search-overlay');
     if (overlayEl) {
@@ -1476,8 +1463,6 @@ async function handleSemanticSync() {
     } catch (err) {
         syncStatus.textContent = `Sync failed: ${err.message}`;
         syncStatus.className = 'be-scraper-status be-scraper-status-error';
-    } finally {
-        syncBtn.disabled = false;
     }
 }
 
@@ -1563,7 +1548,9 @@ function initSemanticSearchBar() {
     // Position toggle button to the left of the scraper trigger
     function positionToggle() {
         const rect = searchForm.getBoundingClientRect();
-        toggleBtn.style.top = (rect.top + (rect.height / 2) - 20) + 'px';
+        // Use a fixed offset from the top instead of calculating based on height
+        // to prevent the icon from moving down when the search bar expands.
+        toggleBtn.style.top = (rect.top + 4) + 'px';
         toggleBtn.style.left = (rect.right + 12) + 'px';
     }
     positionToggle();
@@ -1590,19 +1577,6 @@ function initSemanticSearchBar() {
                     <line x1="12" y1="8" x2="12" y2="3"/>
                     <line x1="20" y1="21" x2="20" y2="16"/>
                     <line x1="20" y1="12" x2="20" y2="3"/>
-                </svg>
-            </button>
-            <button type="button" class="be-gmail-search-submit" id="be-semantic-submit">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"/>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-            </button>
-            <button type="button" class="be-gmail-search-sync" id="be-semantic-sync" title="Sync emails from Gmail">
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="23 4 23 10 17 10"/>
-                    <polyline points="1 20 1 14 7 14"/>
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
                 </svg>
             </button>
         </div>
@@ -1635,8 +1609,6 @@ function initSemanticSearchBar() {
     setInterval(positionOverlay, 2000);
 
     const semanticInput = overlay.querySelector('#be-semantic-input');
-    const submitBtn = overlay.querySelector('#be-semantic-submit');
-    const syncBtn = overlay.querySelector('#be-semantic-sync');
     const filterToggle = overlay.querySelector('#be-semantic-filter-toggle');
 
     // Removed the semanticInput keydown listeners since the custom input is gone.
@@ -1706,17 +1678,7 @@ function initSemanticSearchBar() {
         }
     });
 
-    // Search submit
-    submitBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleSemanticSearch();
-    });
-
-    // Sync button
-    syncBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handleSemanticSync();
-    });
+    // Removed submitBtn and syncBtn listeners
 
     // Apply auth lock state
     isAuthenticated().then(authed => {
@@ -1727,8 +1689,6 @@ function initSemanticSearchBar() {
 }
 
 function applySemanticSearchAuthState(overlay, authed) {
-    const submitBtn = overlay.querySelector('#be-semantic-submit');
-    const syncBtn = overlay.querySelector('#be-semantic-sync');
     const filterToggle = overlay.querySelector('#be-semantic-filter-toggle');
     const nativeInput = document.querySelector('form[role="search"] input');
 
@@ -1736,16 +1696,15 @@ function applySemanticSearchAuthState(overlay, authed) {
         if (nativeInput && isSemanticSearchActive) {
             nativeInput.placeholder = 'Semantic Search: "Email from Nathan about club opportunity"';
         }
-        submitBtn.disabled = false;
-        syncBtn.disabled = false;
         filterToggle.disabled = false;
         overlay.classList.remove('be-search-locked');
+
+        // Auto-sync emails when authenticated
+        handleSemanticSync();
     } else {
         if (nativeInput && isSemanticSearchActive) {
             nativeInput.placeholder = 'Sign in via extension to unlock Semantic Search';
         }
-        submitBtn.disabled = true;
-        syncBtn.disabled = true;
         filterToggle.disabled = true;
         overlay.classList.add('be-search-locked');
     }

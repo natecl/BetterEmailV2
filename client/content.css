@@ -1855,18 +1855,16 @@
     inset: 0;
     border-radius: 24px;
     padding: 2.5px;
-    background: conic-gradient(
-        from var(--be-glow-angle),
-        #1a73e8 0%,
-        #c084fc 8%,
-        #e9d5ff 14%,
-        #c084fc 20%,
-        #1a73e8 28%,
-        rgba(26, 115, 232, 0.3) 40%,
-        rgba(162, 155, 254, 0.25) 60%,
-        rgba(26, 115, 232, 0.3) 80%,
-        #1a73e8 100%
-    );
+    background: conic-gradient(from var(--be-glow-angle),
+            #1a73e8 0%,
+            #c084fc 8%,
+            #e9d5ff 14%,
+            #c084fc 20%,
+            #1a73e8 28%,
+            rgba(26, 115, 232, 0.3) 40%,
+            rgba(162, 155, 254, 0.25) 60%,
+            rgba(26, 115, 232, 0.3) 80%,
+            #1a73e8 100%);
     -webkit-mask:
         linear-gradient(#fff 0 0) content-box,
         linear-gradient(#fff 0 0);
@@ -1978,8 +1976,6 @@
     pointer-events: auto;
 }
 
-.be-gmail-search-submit,
-.be-gmail-search-sync,
 .be-gmail-search-filter-toggle {
     display: flex;
     align-items: center;
@@ -1995,48 +1991,19 @@
     padding: 0;
 }
 
-.be-gmail-search-submit:hover,
-.be-gmail-search-sync:hover,
 .be-gmail-search-filter-toggle:hover {
     background: #e8eaed;
     color: #202124;
 }
 
-.be-gmail-search-submit {
-    background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
-    color: white;
-    box-shadow: 0 1px 4px rgba(26, 115, 232, 0.3);
-}
-
-.be-gmail-search-submit:hover {
-    background: linear-gradient(135deg, #1558b0 0%, #3b78e7 100%);
-    color: white;
-    box-shadow: 0 2px 8px rgba(26, 115, 232, 0.4);
-}
-
-.be-gmail-search-submit:disabled,
-.be-gmail-search-sync:disabled,
 .be-gmail-search-filter-toggle:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
-.be-gmail-search-submit:disabled:hover,
-.be-gmail-search-sync:disabled:hover,
 .be-gmail-search-filter-toggle:disabled:hover {
     background: transparent;
     color: #5f6368;
-}
-
-.be-gmail-search-submit:disabled {
-    background: #dadce0;
-    color: #9aa0a6;
-    box-shadow: none;
-}
-
-.be-gmail-search-submit:disabled:hover {
-    background: #dadce0;
-    color: #9aa0a6;
 }
 
 /* Filters dropdown below the search bar */
@@ -2161,14 +2128,10 @@
         opacity: 0.5;
     }
 
-    .be-gmail-search-submit,
-    .be-gmail-search-sync,
     .be-gmail-search-filter-toggle {
         color: #bdc1c6;
     }
 
-    .be-gmail-search-submit:hover,
-    .be-gmail-search-sync:hover,
     .be-gmail-search-filter-toggle:hover {
         background: #3c4043;
         color: #e8eaed;
