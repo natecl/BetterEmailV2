@@ -1513,14 +1513,14 @@ function toggleSemanticSearch(forceState) {
     if (isSemanticSearchActive) {
         overlay.classList.add('be-overlay-active');
         toggleBtn.classList.add('be-toggle-active');
-        toggleBtn.title = 'Switch to Gmail Search (Tab)';
+        toggleBtn.title = 'Switch to Gmail Search (Shift)';
         // Focus the semantic input
         const input = document.getElementById('be-semantic-input');
         if (input && !input.disabled) input.focus();
     } else {
         overlay.classList.remove('be-overlay-active');
         toggleBtn.classList.remove('be-toggle-active');
-        toggleBtn.title = 'Switch to Semantic Search (Tab)';
+        toggleBtn.title = 'Switch to Semantic Search (Shift)';
         // Close any open filter/results dropdowns
         const fields = document.getElementById('be-semantic-filter-fields');
         if (fields) fields.style.display = 'none';
@@ -1550,7 +1550,7 @@ function initSemanticSearchBar() {
     const toggleBtn = document.createElement('button');
     toggleBtn.id = 'be-semantic-toggle-btn';
     toggleBtn.className = 'be-semantic-toggle-btn';
-    toggleBtn.title = 'Switch to Semantic Search (Tab)';
+    toggleBtn.title = 'Toggle Semantic Search (Shift)';
     toggleBtn.type = 'button';
     toggleBtn.innerHTML = `
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -1645,17 +1645,43 @@ function initSemanticSearchBar() {
     const nativeSearchInput = searchForm.querySelector('input');
     if (nativeSearchInput) {
         nativeSearchInput.addEventListener('keydown', e => {
-            if (e.key === 'Tab') {
-                e.preventDefault();
-                e.stopPropagation();
-                toggleSemanticSearch(!isSemanticSearchActive);
-            } else if (e.key === 'Enter' && isSemanticSearchActive) {
+            if (e.key === 'Enter' && isSemanticSearchActive) {
                 e.preventDefault();
                 e.stopPropagation();
                 handleSemanticSearch();
             }
         });
     }
+
+    // Global Shift to toggle Semantic Search
+    // We track whether any key other than Shift was pressed while Shift was held
+    let shiftHeld = false;
+    let otherKeyPressedWhileShiftHeld = false;
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Shift') {
+            shiftHeld = true;
+            otherKeyPressedWhileShiftHeld = false;
+        } else if (shiftHeld) {
+            otherKeyPressedWhileShiftHeld = true;
+        }
+    }, true);
+
+    document.addEventListener('keyup', e => {
+        if (e.key === 'Shift') {
+            shiftHeld = false;
+            // Only toggle if they merely tapped Shift, rather than typing a capital letter or shortcut
+            if (!otherKeyPressedWhileShiftHeld) {
+                // Do not toggle if they are typing in an input other than the search bar itself
+                const activeEl = document.activeElement;
+                const isWritingEmail = activeEl && (activeEl.isContentEditable || (activeEl.tagName === 'TEXTAREA') || (activeEl.tagName === 'INPUT' && activeEl !== nativeSearchInput));
+
+                if (!isWritingEmail) {
+                    toggleSemanticSearch(!isSemanticSearchActive);
+                }
+            }
+        }
+    }, true);
 
     // Filter inputs stop propagation
     overlay.querySelectorAll('.be-gmail-filter-input').forEach(el => {
