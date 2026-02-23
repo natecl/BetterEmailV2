@@ -1585,14 +1585,20 @@ function initSemanticSearchBar() {
     // Removed the semanticInput keydown listeners since the custom input is gone.
 
     // Listen to native Gmail search input for Enter key when semantic search is active
+    // and block Gmail's native autocomplete dropdown by intercepting events in the capture phase.
     const nativeSearchInput = searchForm.querySelector('input');
     if (nativeSearchInput) {
-        nativeSearchInput.addEventListener('keydown', e => {
-            if (e.key === 'Enter' && isSemanticSearchActive) {
-                e.preventDefault();
-                e.stopPropagation();
-                handleSemanticSearch();
-            }
+        ['keydown', 'keyup', 'keypress', 'input', 'focus', 'click'].forEach(evt => {
+            nativeSearchInput.addEventListener(evt, e => {
+                if (isSemanticSearchActive) {
+                    if (evt === 'keydown' && e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSemanticSearch();
+                    }
+                    e.stopImmediatePropagation();
+                    e.stopPropagation();
+                }
+            }, true); // Use capture phase so we run BEFORE Gmail's internal listeners
         });
     }
 
