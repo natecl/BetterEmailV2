@@ -497,6 +497,16 @@ function showLoading(panel) {
     `;
 }
 
+function resetPanelAnalyzeBtn(btn) {
+    btn.disabled = false;
+    btn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+        </svg>
+        Analyze
+    `;
+}
+
 function showError(panel, message) {
     panel.classList.add("visible");
     panel.innerHTML = `
@@ -924,11 +934,12 @@ function initScraperUI() {
     const trigger = document.createElement('button');
     trigger.id = 'be-scraper-trigger';
     trigger.className = 'be-scraper-trigger';
-    trigger.title = 'BetterEmail Lead Finder';
+    trigger.title = 'BetterEmail Tools';
     trigger.innerHTML = `
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="8"/>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
         </svg>
     `;
     document.body.appendChild(trigger);
@@ -937,7 +948,7 @@ function initScraperUI() {
     function positionTrigger() {
         const rect = searchForm.getBoundingClientRect();
         trigger.style.top = (rect.top + (rect.height / 2) - 20) + 'px';
-        trigger.style.left = (rect.right + 12) + 'px';
+        trigger.style.left = (rect.right + 56) + 'px';
     }
 
     positionTrigger();
@@ -957,42 +968,166 @@ function initScraperUI() {
                     <circle cx="11" cy="11" r="8"/>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
-                BetterEmail Lead Finder
+                BetterEmail Tools
             </div>
             <button class="be-scraper-close" id="be-scraper-close">&#x2715;</button>
         </div>
-        <div id="be-lead-container" class="be-scraper-body">
-            <div id="be-lead-locked" class="be-locked-ui" style="display:none;">
-                Please click the BetterEmail extension icon in your toolbar and sign in to unlock Lead Finder.
+        <div class="be-tab-buttons">
+            <button class="be-tab-button active" data-tab="lead-finder">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                Lead Finder
+            </button>
+            <button class="be-tab-button" data-tab="analyzer">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                </svg>
+                Email Analyzer
+            </button>
+        </div>
+        <div id="be-tab-lead-finder" class="be-tab-pane active">
+            <div id="be-lead-container" class="be-scraper-body">
+                <div id="be-lead-locked" class="be-locked-ui" style="display:none;">
+                    Please click the BetterEmail extension icon in your toolbar and sign in to unlock Lead Finder.
+                </div>
+                <div id="be-lead-content">
+                    <input type="text" class="be-scraper-input" id="be-scraper-input"
+                           placeholder="e.g. UF Computer Science professors">
+                    <button class="be-scraper-submit" id="be-scraper-submit">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                        Find Leads
+                    </button>
+                    <div class="be-scraper-status" id="be-scraper-status"></div>
+                    <div class="be-scraper-results" id="be-scraper-results"></div>
+                </div>
             </div>
-            <div id="be-lead-content">
-                <input type="text" class="be-scraper-input" id="be-scraper-input"
-                       placeholder="e.g. UF Computer Science professors">
-                <button class="be-scraper-submit" id="be-scraper-submit">
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="11" cy="11" r="8"/>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
-                    Find Leads
-                </button>
-                <div class="be-scraper-status" id="be-scraper-status"></div>
-                <div class="be-scraper-results" id="be-scraper-results"></div>
+        </div>
+        <div id="be-tab-analyzer" class="be-tab-pane">
+            <div class="be-scraper-body">
+                <div id="be-analyzer-locked" class="be-locked-ui" style="display:none;">
+                    Please click the BetterEmail extension icon in your toolbar and sign in to unlock Email Analyzer.
+                </div>
+                <div id="be-analyzer-content" class="be-panel-analyzer-form">
+                    <textarea class="be-panel-textarea" id="be-panel-email-input"
+                              placeholder="Paste the email you want to analyze..."></textarea>
+                    <input type="text" class="be-panel-context-input" id="be-panel-context-input"
+                           placeholder="What's this email for? (e.g., job application, follow-up)">
+                    <button class="be-panel-analyze-btn" id="be-panel-analyze-btn">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                        </svg>
+                        Analyze
+                    </button>
+                    <div class="be-panel-analyzer-results" id="be-panel-analyzer-results"></div>
+                </div>
             </div>
         </div>
     `;
     document.body.appendChild(panel);
 
+    // Tab switching logic
+    panel.querySelectorAll('.be-tab-button').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Deactivate all tabs and panes
+            panel.querySelectorAll('.be-tab-button').forEach(b => b.classList.remove('active'));
+            panel.querySelectorAll('.be-tab-pane').forEach(p => p.classList.remove('active'));
+            // Activate clicked tab and corresponding pane
+            btn.classList.add('active');
+            const tabId = btn.dataset.tab;
+            panel.querySelector(`#be-tab-${tabId}`).classList.add('active');
+        });
+    });
+
     // Apply auth lock state
     isAuthenticated().then(authed => {
         const locked = panel.querySelector('#be-lead-locked');
         const content = panel.querySelector('#be-lead-content');
+        const analyzerLocked = panel.querySelector('#be-analyzer-locked');
+        const analyzerContent = panel.querySelector('#be-analyzer-content');
         if (authed) {
             locked.style.display = 'none';
             content.style.display = 'block';
+            analyzerLocked.style.display = 'none';
+            analyzerContent.style.display = 'flex';
         } else {
             locked.style.display = 'block';
             content.style.display = 'none';
+            analyzerLocked.style.display = 'block';
+            analyzerContent.style.display = 'none';
         }
+    });
+
+    // Stop Gmail from capturing keyboard events on analyzer inputs
+    const panelEmailInput = panel.querySelector('#be-panel-email-input');
+    const panelContextInput = panel.querySelector('#be-panel-context-input');
+    [panelEmailInput, panelContextInput].forEach(el => {
+        ['keydown', 'keyup', 'keypress', 'focus', 'click'].forEach(evt => {
+            el.addEventListener(evt, e => e.stopPropagation());
+        });
+    });
+
+    // Analyzer form submit handler
+    const panelAnalyzeBtn = panel.querySelector('#be-panel-analyze-btn');
+    const panelResultsEl = panel.querySelector('#be-panel-analyzer-results');
+
+    panelAnalyzeBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const emailText = panelEmailInput.value.trim();
+        const context = panelContextInput.value.trim();
+
+        if (!emailText) {
+            showError(panelResultsEl, "Please paste an email to analyze.");
+            return;
+        }
+        if (!context) {
+            showError(panelResultsEl, "Add context (e.g., 'job application') for better analysis.");
+            return;
+        }
+
+        panelAnalyzeBtn.disabled = true;
+        panelAnalyzeBtn.innerHTML = '<div class="be-spinner"></div><span>Analyzing...</span>';
+        showLoading(panelResultsEl);
+
+        try {
+            const token = await getContentAccessToken();
+            if (!token) {
+                showError(panelResultsEl, "Please sign in via the BetterEmail popup first.");
+                resetPanelAnalyzeBtn(panelAnalyzeBtn);
+                return;
+            }
+
+            const res = await apiFetch(`${getApiBase()}/analyze-email`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    email: emailText,
+                    context,
+                    systemPrompt: SYSTEM_PROMPT
+                })
+            });
+
+            if (res.ok) {
+                renderResults(panelResultsEl, res.data.response);
+            } else {
+                showError(panelResultsEl, res.data.error || "Analysis failed.");
+            }
+        } catch (err) {
+            console.error("[BetterEmail] Panel analyzer error:", err);
+            showError(panelResultsEl, "Can't reach server. Is the backend running on localhost:3000?");
+        }
+
+        resetPanelAnalyzeBtn(panelAnalyzeBtn);
     });
 
     // Stop Gmail from capturing keyboard events
@@ -1131,13 +1266,27 @@ async function handleScraperSubmit() {
 function refreshLeadFinderAuth(authed) {
     const locked = document.getElementById('be-lead-locked');
     const content = document.getElementById('be-lead-content');
-    if (!locked || !content) return;
-    if (authed) {
-        locked.style.display = 'none';
-        content.style.display = 'block';
-    } else {
-        locked.style.display = 'block';
-        content.style.display = 'none';
+    if (locked && content) {
+        if (authed) {
+            locked.style.display = 'none';
+            content.style.display = 'block';
+        } else {
+            locked.style.display = 'block';
+            content.style.display = 'none';
+        }
+    }
+
+    // Also refresh analyzer tab auth state
+    const analyzerLocked = document.getElementById('be-analyzer-locked');
+    const analyzerContent = document.getElementById('be-analyzer-content');
+    if (analyzerLocked && analyzerContent) {
+        if (authed) {
+            analyzerLocked.style.display = 'none';
+            analyzerContent.style.display = 'flex';
+        } else {
+            analyzerLocked.style.display = 'block';
+            analyzerContent.style.display = 'none';
+        }
     }
 }
 
@@ -1173,10 +1322,9 @@ async function getContentSession() {
 }
 
 async function handleSemanticSearch() {
-    const queryInput = document.getElementById('be-semantic-input');
+    const queryInput = document.querySelector('form[role="search"] input');
     const resultsContainer = document.getElementById('be-semantic-results');
     const submitBtn = document.getElementById('be-semantic-submit');
-    const searchWrapper = document.getElementById('be-search-wrapper');
 
     const query = queryInput?.value?.trim();
     if (!query) return;
@@ -1186,13 +1334,14 @@ async function handleSemanticSearch() {
     // Position results dropdown below the overlay
     const overlayEl = document.getElementById('be-gmail-search-overlay');
     if (overlayEl) {
+        overlayEl.classList.add('is-searching');
         const rect = overlayEl.getBoundingClientRect();
         resultsContainer.style.top = (rect.bottom + 4) + 'px';
         resultsContainer.style.left = rect.left + 'px';
         resultsContainer.style.width = rect.width + 'px';
     }
+    resultsContainer.style.display = 'flex';
     resultsContainer.innerHTML = '<div class="be-scraper-status be-scraper-status-loading" style="display:block;">Searching your emails...</div>';
-    searchWrapper?.classList.add('is-searching');
 
     try {
         const token = await getContentAccessToken();
@@ -1229,7 +1378,7 @@ async function handleSemanticSearch() {
         resultsContainer.innerHTML = `<div class="be-scraper-status be-scraper-status-error" style="display:block;">Search failed: ${escapeHTML(err.message)}</div>`;
     } finally {
         submitBtn.disabled = false;
-        searchWrapper?.classList.remove('is-searching');
+        if (overlayEl) overlayEl.classList.remove('is-searching');
         submitBtn.innerHTML = `
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="11" cy="11" r="8"/>
@@ -1349,8 +1498,47 @@ initSemanticSearchBar();
 
 
 /* =========================================================
-   SEMANTIC SEARCH BAR — replaces Gmail native search
+   SEMANTIC SEARCH BAR — toggle overlay on Gmail search
 ========================================================= */
+
+let isSemanticSearchActive = false;
+
+function toggleSemanticSearch(forceState) {
+    const overlay = document.getElementById('be-gmail-search-overlay');
+    const toggleBtn = document.getElementById('be-semantic-toggle-btn');
+    if (!overlay || !toggleBtn) return;
+
+    isSemanticSearchActive = typeof forceState === 'boolean' ? forceState : !isSemanticSearchActive;
+
+    if (isSemanticSearchActive) {
+        overlay.classList.add('be-overlay-active');
+        toggleBtn.classList.add('be-toggle-active');
+        toggleBtn.title = 'Switch to Gmail Search (Tab)';
+        // Focus the semantic input
+        const input = document.getElementById('be-semantic-input');
+        if (input && !input.disabled) input.focus();
+    } else {
+        overlay.classList.remove('be-overlay-active');
+        toggleBtn.classList.remove('be-toggle-active');
+        toggleBtn.title = 'Switch to Semantic Search (Tab)';
+        // Close any open filter/results dropdowns
+        const fields = document.getElementById('be-semantic-filter-fields');
+        if (fields) fields.style.display = 'none';
+
+        const resultsContainer = document.getElementById('be-semantic-results');
+        if (resultsContainer) {
+            resultsContainer.style.display = 'none';
+            resultsContainer.innerHTML = '';
+        }
+
+        // Focus native Gmail search input and reset placeholder
+        const nativeInput = document.querySelector('form[role="search"] input');
+        if (nativeInput) {
+            nativeInput.placeholder = 'Search in mail';
+            nativeInput.focus();
+        }
+    }
+}
 
 function initSemanticSearchBar() {
     if (document.getElementById('be-gmail-search-overlay')) return true;
@@ -1358,15 +1546,41 @@ function initSemanticSearchBar() {
     const searchForm = document.querySelector('form[role="search"]');
     if (!searchForm) return false;
 
-    // Create overlay container that covers the Gmail search form entirely
+    // Create toggle button positioned next to the search bar
+    const toggleBtn = document.createElement('button');
+    toggleBtn.id = 'be-semantic-toggle-btn';
+    toggleBtn.className = 'be-semantic-toggle-btn';
+    toggleBtn.title = 'Switch to Semantic Search (Tab)';
+    toggleBtn.type = 'button';
+    toggleBtn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+    `;
+    document.body.appendChild(toggleBtn);
+
+    // Position toggle button to the left of the scraper trigger
+    function positionToggle() {
+        const rect = searchForm.getBoundingClientRect();
+        toggleBtn.style.top = (rect.top + (rect.height / 2) - 20) + 'px';
+        toggleBtn.style.left = (rect.right + 12) + 'px';
+    }
+    positionToggle();
+    window.addEventListener('resize', positionToggle);
+    setInterval(positionToggle, 2000);
+
+    // Toggle click handler
+    toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleSemanticSearch();
+    });
+
+    // Create overlay container — HIDDEN by default
     const overlay = document.createElement('div');
     overlay.id = 'be-gmail-search-overlay';
     overlay.className = 'be-gmail-search-overlay';
     overlay.innerHTML = `
-        <div class="be-search-wrapper" id="be-search-wrapper">
-            <input type="text" class="be-gmail-search-input" id="be-semantic-input"
-                   placeholder='Search emails: "Email from Nathan about club opportunity"'>
-        </div>
         <div class="be-gmail-search-actions">
             <button type="button" class="be-gmail-search-filter-toggle" id="be-semantic-filter-toggle">
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -1398,7 +1612,7 @@ function initSemanticSearchBar() {
             <input type="date" id="be-semantic-filter-before" class="be-gmail-filter-input" placeholder="Before">
         </div>
         <div id="be-semantic-sync-status" class="be-scraper-status"></div>
-        <div id="be-semantic-results" class="be-semantic-results be-gmail-search-results"></div>
+        <div id="be-semantic-results" class="be-semantic-results be-gmail-search-results" style="display:none;"></div>
     `;
 
     // Position overlay directly on top of the search form
@@ -1425,10 +1639,23 @@ function initSemanticSearchBar() {
     const syncBtn = overlay.querySelector('#be-semantic-sync');
     const filterToggle = overlay.querySelector('#be-semantic-filter-toggle');
 
-    // Stop Gmail from capturing keyboard events
-    ['keydown', 'keyup', 'keypress', 'focus', 'click'].forEach(evt => {
-        semanticInput.addEventListener(evt, e => e.stopPropagation());
-    });
+    // Removed the semanticInput keydown listeners since the custom input is gone.
+
+    // Listen to native Gmail search input for Enter key when semantic search is active
+    const nativeSearchInput = searchForm.querySelector('input');
+    if (nativeSearchInput) {
+        nativeSearchInput.addEventListener('keydown', e => {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleSemanticSearch(!isSemanticSearchActive);
+            } else if (e.key === 'Enter' && isSemanticSearchActive) {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSemanticSearch();
+            }
+        });
+    }
 
     // Filter inputs stop propagation
     overlay.querySelectorAll('.be-gmail-filter-input').forEach(el => {
@@ -1459,14 +1686,6 @@ function initSemanticSearchBar() {
         handleSemanticSearch();
     });
 
-    semanticInput.addEventListener('keydown', e => {
-        e.stopPropagation();
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            handleSemanticSearch();
-        }
-    });
-
     // Sync button
     syncBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1482,21 +1701,23 @@ function initSemanticSearchBar() {
 }
 
 function applySemanticSearchAuthState(overlay, authed) {
-    const input = overlay.querySelector('#be-semantic-input');
     const submitBtn = overlay.querySelector('#be-semantic-submit');
     const syncBtn = overlay.querySelector('#be-semantic-sync');
     const filterToggle = overlay.querySelector('#be-semantic-filter-toggle');
+    const nativeInput = document.querySelector('form[role="search"] input');
 
     if (authed) {
-        input.disabled = false;
-        input.placeholder = 'Search emails: "Email from Nathan about club opportunity"';
+        if (nativeInput && isSemanticSearchActive) {
+            nativeInput.placeholder = 'Semantic Search: "Email from Nathan about club opportunity"';
+        }
         submitBtn.disabled = false;
         syncBtn.disabled = false;
         filterToggle.disabled = false;
         overlay.classList.remove('be-search-locked');
     } else {
-        input.disabled = true;
-        input.placeholder = 'Sign in via extension to unlock Semantic Search';
+        if (nativeInput && isSemanticSearchActive) {
+            nativeInput.placeholder = 'Sign in via extension to unlock Semantic Search';
+        }
         submitBtn.disabled = true;
         syncBtn.disabled = true;
         filterToggle.disabled = true;

@@ -1247,6 +1247,156 @@
 
 
 /* =========================================================
+   PANEL TAB INTERFACE
+========================================================= */
+
+.be-tab-buttons {
+    display: flex;
+    gap: 0;
+    padding: 0 16px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.be-tab-button {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 12px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #9aa0a6;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-radius: 0;
+}
+
+.be-tab-button:hover {
+    color: #5f6368;
+    background: #f8f9fa;
+    transform: none;
+    box-shadow: none;
+}
+
+.be-tab-button.active {
+    color: #1a73e8;
+    border-bottom-color: #1a73e8;
+    background: none;
+}
+
+.be-tab-button.active svg {
+    stroke: #1a73e8;
+}
+
+.be-tab-pane {
+    display: none;
+}
+
+.be-tab-pane.active {
+    display: block;
+}
+
+
+/* =========================================================
+   PANEL EMAIL ANALYZER FORM
+========================================================= */
+
+.be-panel-analyzer-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.be-panel-textarea {
+    width: 100%;
+    min-height: 100px;
+    padding: 10px 14px;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #202124;
+    background: #f8f9fa;
+    outline: none;
+    resize: vertical;
+    line-height: 1.5;
+    font-family: 'Google Sans', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+}
+
+.be-panel-textarea:focus {
+    background: white;
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+}
+
+.be-panel-textarea::placeholder {
+    color: #9aa0a6;
+}
+
+.be-panel-context-input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #202124;
+    background: #f8f9fa;
+    outline: none;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+}
+
+.be-panel-context-input:focus {
+    background: white;
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.15);
+}
+
+.be-panel-context-input::placeholder {
+    color: #9aa0a6;
+}
+
+.be-panel-analyze-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #4285f4 0%, #5a95f5 100%);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(66, 133, 244, 0.3);
+}
+
+.be-panel-analyze-btn:hover {
+    background: linear-gradient(135deg, #3b78e7 0%, #4285f4 100%);
+    box-shadow: 0 4px 12px rgba(66, 133, 244, 0.4);
+    transform: translateY(-1px);
+}
+
+.be-panel-analyze-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.be-panel-analyzer-results {
+    margin-top: 4px;
+}
+
+
+/* =========================================================
    SEMANTIC SEARCH UI (inside scraper panel)
 ========================================================= */
 
@@ -1572,6 +1722,39 @@
         border-bottom-color: #8ab4f8;
     }
 
+    /* Panel tabs dark mode */
+    .be-tab-buttons {
+        border-bottom-color: #3c4043;
+    }
+
+    .be-tab-button {
+        color: #9aa0a6;
+    }
+
+    .be-tab-button:hover {
+        color: #e8eaed;
+        background: #35363a;
+    }
+
+    .be-tab-button.active {
+        color: #8ab4f8;
+        border-bottom-color: #8ab4f8;
+    }
+
+    /* Panel analyzer form dark mode */
+    .be-panel-textarea,
+    .be-panel-context-input {
+        background: #35363a;
+        border-color: #5f6368;
+        color: #e8eaed;
+    }
+
+    .be-panel-textarea:focus,
+    .be-panel-context-input:focus {
+        background: #3c4043;
+        border-color: #8ab4f8;
+    }
+
     /* Semantic search dark mode */
     .be-semantic-sync-btn {
         background: #35363a;
@@ -1640,44 +1823,121 @@
     position: absolute;
     display: flex;
     align-items: center;
+    justify-content: flex-end;
+    padding-right: 48px;
     gap: 8px;
     z-index: 1000;
     font-family: 'Google Sans', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
     box-sizing: border-box;
-    background: inherit;
-}
-
-.be-gmail-search-overlay .be-search-wrapper {
-    flex: 1;
-    position: relative;
-    padding: 2px;
+    background: transparent !important;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
     border-radius: 24px;
-    overflow: hidden;
-    margin-bottom: 0;
 }
 
-.be-gmail-search-overlay .be-search-wrapper::before {
+.be-gmail-search-overlay.be-overlay-active {
+    opacity: 1;
+    pointer-events: none;
+}
+
+/* Animated angle property for the glow trail */
+@property --be-glow-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+}
+
+/* Full glow ring outline with a bright line that rotates around it */
+.be-gmail-search-overlay::before {
     content: '';
     position: absolute;
-    inset: -50%;
-    background: conic-gradient(from 0deg,
-            #1a73e8,
-            #c084fc,
-            #a29bfe,
-            #1a73e8,
-            #c084fc);
-    animation: be-glow-spin 3s linear infinite;
-    opacity: 0.5;
+    inset: 0;
+    border-radius: 24px;
+    padding: 2.5px;
+    background: conic-gradient(
+        from var(--be-glow-angle),
+        #1a73e8 0%,
+        #c084fc 8%,
+        #e9d5ff 14%,
+        #c084fc 20%,
+        #1a73e8 28%,
+        rgba(26, 115, 232, 0.3) 40%,
+        rgba(162, 155, 254, 0.25) 60%,
+        rgba(26, 115, 232, 0.3) 80%,
+        #1a73e8 100%
+    );
+    -webkit-mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+        linear-gradient(#fff 0 0) content-box,
+        linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    animation: be-glow-trail 3s linear infinite;
+    pointer-events: none;
     transition: opacity 0.3s ease;
 }
 
-.be-gmail-search-overlay .be-search-wrapper:focus-within::before {
+@keyframes be-glow-trail {
+    to {
+        --be-glow-angle: 360deg;
+    }
+}
+
+.be-gmail-search-overlay.be-overlay-active::before {
     opacity: 1;
 }
 
-.be-gmail-search-overlay .be-search-wrapper.is-searching::before {
-    animation: be-glow-spin 0.8s linear infinite;
-    opacity: 1;
+.be-gmail-search-overlay.is-searching::before {
+    animation: be-glow-trail 1s linear infinite;
+}
+
+
+/* =========================================================
+   SEMANTIC SEARCH TOGGLE BUTTON
+========================================================= */
+
+.be-semantic-toggle-btn {
+    position: fixed;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: #fff;
+    cursor: pointer;
+    color: #5f6368;
+    padding: 0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    transition: all 0.25s ease;
+}
+
+.be-semantic-toggle-btn:hover {
+    background: #f1f3f4;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    color: #202124;
+    transform: scale(1.1);
+}
+
+.be-semantic-toggle-btn.be-toggle-active {
+    background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+    color: white;
+    box-shadow: 0 2px 10px rgba(26, 115, 232, 0.4);
+}
+
+.be-semantic-toggle-btn.be-toggle-active:hover {
+    background: linear-gradient(135deg, #1558b0 0%, #3b78e7 100%);
+    color: white;
+    box-shadow: 0 4px 16px rgba(26, 115, 232, 0.5);
+}
+
+.be-semantic-toggle-btn svg {
+    transition: stroke 0.2s ease;
 }
 
 .be-gmail-search-input {
@@ -1689,14 +1949,14 @@
     border-radius: 22px;
     font-size: 14px;
     color: #202124;
-    background: #f1f3f4;
+    background: transparent !important;
     outline: none;
     box-sizing: border-box;
-    transition: background 0.2s ease;
+    transition: color 0.2s ease;
 }
 
 .be-gmail-search-input:focus {
-    background: #fff;
+    background: transparent !important;
 }
 
 .be-gmail-search-input::placeholder {
@@ -1704,9 +1964,9 @@
 }
 
 .be-gmail-search-input:disabled {
-    background: #e8eaed;
+    background: transparent !important;
     cursor: not-allowed;
-    opacity: 0.7;
+    opacity: 0.5;
 }
 
 /* Action buttons beside the search bar */
@@ -1715,6 +1975,7 @@
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
+    pointer-events: auto;
 }
 
 .be-gmail-search-submit,
@@ -1789,6 +2050,7 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     z-index: 1001;
     width: 600px;
+    pointer-events: auto;
 }
 
 .be-gmail-filter-input {
@@ -1826,10 +2088,16 @@
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
     z-index: 1001;
     padding: 8px;
+    pointer-events: auto;
 }
 
 /* Locked search state */
 .be-search-locked .be-search-wrapper::before {
+    opacity: 0.2;
+    animation: none;
+}
+
+.be-gmail-search-overlay.be-search-locked::before {
     opacity: 0.2;
     animation: none;
 }
@@ -1863,17 +2131,34 @@
         color: #9aa0a6;
     }
 
+    .be-semantic-toggle-btn {
+        background: #2d2e30;
+        color: #bdc1c6;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    .be-semantic-toggle-btn:hover {
+        background: #3c4043;
+        color: #e8eaed;
+    }
+
+    .be-semantic-toggle-btn.be-toggle-active {
+        background: linear-gradient(135deg, #1a73e8 0%, #4285f4 100%);
+        color: white;
+    }
+
     .be-gmail-search-input {
-        background: #35363a;
+        background: transparent !important;
         color: #e8eaed;
     }
 
     .be-gmail-search-input:focus {
-        background: #3c4043;
+        background: transparent !important;
     }
 
     .be-gmail-search-input:disabled {
-        background: #2d2e30;
+        background: transparent !important;
+        opacity: 0.5;
     }
 
     .be-gmail-search-submit,
