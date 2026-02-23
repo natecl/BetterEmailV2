@@ -34,6 +34,34 @@ const {
 } = require('./services/searchService');
 
 const rateLimit = require('express-rate-limit');
+const multer = require('multer');
+const PDFParser = require('pdf2json');
+
+// Extract plain text from a PDF buffer using pdf2json (pure JS, Node 22 compatible)
+function extractPdfText(buffer) {
+    return new Promise((resolve, reject) => {
+        const parser = new PDFParser(null, 1);
+        parser.on('pdfParser_dataReady', (pdfData) => {
+            try {
+                const text = pdfData.Pages
+                    .map(page =>
+                        page.Texts
+                            .map(t => t.R.map(r => decodeURIComponent(r.T)).join(''))
+                            .join(' ')
+                    )
+                    .join('\n')
+                    .trim();
+                resolve(text);
+            } catch (e) {
+                reject(new Error('Failed to extract text from PDF'));
+            }
+        });
+        parser.on('pdfParser_dataError', (err) => {
+            reject(new Error(err.parserError || 'Failed to parse PDF'));
+        });
+        parser.parseBuffer(buffer);
+    });
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -57,6 +85,16 @@ app.use('/gmail/sync', apiLimiter);
 app.use('/search', apiLimiter);
 app.use('/user/resume', apiLimiter);
 app.use('/draft-email', apiLimiter);
+
+// Multer for PDF resume uploads
+const resumeUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype === 'application/pdf') cb(null, true);
+        else cb(new Error('Only PDF files are allowed'));
+    }
+});
 
 // Email Analyzer endpoint
 app.post('/analyze-email', requireAuth, async (req, res) => {
@@ -344,11 +382,12 @@ app.get('/user/resume', requireAuth, async (req, res) => {
         );
         const { data, error } = await supabase
             .from('users')
-            .select('resume_text')
+            .select('resume_text, resume_summary')
             .eq('id', req.userId)
             .single();
-        if (error) return res.status(500).json({ error: 'Failed to fetch resume' });
-        res.json({ resume_text: data?.resume_text || '' });
+        // PGRST116 = "0 rows" — user exists in auth but has no profile row yet; treat as empty
+        if (error && error.code !== 'PGRST116') return res.status(500).json({ error: 'Failed to fetch resume' });
+        res.json({ resume_text: data?.resume_text || '', resume_summary: data?.resume_summary || '' });
     } catch (error) {
         console.error('Get resume error:', error);
         res.status(500).json({ error: 'Failed to fetch resume' });
@@ -378,6 +417,82 @@ app.put('/user/resume', requireAuth, async (req, res) => {
     } catch (error) {
         console.error('Save resume error:', error);
         res.status(500).json({ error: 'Failed to save resume' });
+    }
+});
+
+// Upload a PDF resume, extract text, and save it
+app.post('/user/resume/upload', requireAuth, (req, res, next) => {
+    resumeUpload.single('resume')(req, res, (err) => {
+        if (err) {
+            if (err.message === 'Only PDF files are allowed')
+                return res.status(400).json({ error: err.message });
+            if (err.code === 'LIMIT_FILE_SIZE')
+                return res.status(400).json({ error: 'File too large. Max 5 MB.' });
+            return res.status(400).json({ error: 'Upload error: ' + err.message });
+        }
+        next();
+    });
+}, async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No PDF file uploaded' });
+
+        let resume_text;
+        try {
+            resume_text = await extractPdfText(req.file.buffer);
+        } catch (e) {
+            console.error('[PDF Parse Error]', e.message);
+            return res.status(400).json({ error: 'Could not parse PDF. Ensure it is a valid, text-based PDF.' });
+        }
+
+        resume_text = resume_text.trim();
+        if (!resume_text) return res.status(400).json({ error: 'PDF appears to be empty or image-only.' });
+        if (resume_text.length > 20000) return res.status(400).json({ error: 'Resume text exceeds 20,000 characters. Use a shorter resume.' });
+
+        // Generate AI summary (non-fatal — upload still succeeds if this fails)
+        let resume_summary = '';
+        try {
+            const summaryResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.CLAUDE_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'anthropic/claude-sonnet-4-5',
+                    max_tokens: 300,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'Summarize this resume in 3-4 sentences. Cover: current experience level, top skills, and career focus. Be professional and concise.'
+                        },
+                        { role: 'user', content: resume_text }
+                    ]
+                })
+            });
+            if (summaryResp.ok) {
+                const sd = await summaryResp.json();
+                resume_summary = sd.choices?.[0]?.message?.content?.trim() || '';
+            } else {
+                const errBody = await summaryResp.json().catch(() => ({}));
+                console.error('[Resume Summary Error] OpenRouter returned', summaryResp.status, JSON.stringify(errBody).slice(0, 300));
+            }
+        } catch (e) {
+            console.error('[Resume Summary Error]', e.message);
+        }
+
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+        const { error } = await supabase
+            .from('users')
+            .upsert(
+                { id: req.userId, email: req.userEmail, resume_text, resume_summary, updated_at: new Date().toISOString() },
+                { onConflict: 'id' }
+            );
+        if (error) return res.status(500).json({ error: 'Failed to save resume' });
+
+        res.json({ success: true, characters: resume_text.length, summary: resume_summary });
+    } catch (error) {
+        console.error('Resume upload error:', error);
+        res.status(500).json({ error: 'Failed to upload resume' });
     }
 });
 
@@ -416,6 +531,7 @@ app.post('/draft-email', requireAuth, async (req, res) => {
             },
             body: JSON.stringify({
                 model: 'anthropic/claude-sonnet-4-5',
+                max_tokens: 500,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: `Resume:\n${data.resume_text}\n\nJob/Context:\n${jobDescription}` }

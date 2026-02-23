@@ -17,7 +17,9 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
-    "openai": "^4.85.4"
+    "multer": "^2.0.2",
+    "openai": "^4.85.4",
+    "pdf2json": "^4.0.2"
   },
   "devDependencies": {
     "jest": "^30.2.0",
