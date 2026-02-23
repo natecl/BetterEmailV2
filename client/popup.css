@@ -891,3 +891,186 @@ button:disabled {
 .be-result-open:hover {
     opacity: 0.8;
 }
+
+/* =====================================================
+   TAB NAVIGATION
+===================================================== */
+
+.be-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+    flex-shrink: 0;
+}
+
+.be-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-dim);
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+    border-radius: 0;
+    width: auto;
+}
+
+.be-tab:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+    transform: none;
+}
+
+.be-tab.be-tab-active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+/* =====================================================
+   SETTINGS TAB
+===================================================== */
+
+.be-settings-section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    animation: fadeIn 0.3s ease;
+}
+
+.be-settings-title {
+    font-family: 'Outfit', sans-serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--primary);
+}
+
+.be-settings-desc {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+}
+
+.be-upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+}
+.be-upload-zone:hover, .be-upload-drag {
+    border-color: var(--primary);
+    background: rgba(142, 125, 255, 0.06);
+}
+.be-upload-icon { font-size: 1.8rem; }
+.be-upload-text { font-size: 0.85rem; color: var(--text); }
+.be-upload-link { color: var(--primary); text-decoration: underline; cursor: pointer; }
+.be-upload-hint { font-size: 0.75rem; color: var(--text-dim); }
+
+.be-file-chosen {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(142, 125, 255, 0.08);
+    border: 1px solid var(--primary);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+}
+.be-file-icon { font-size: 1rem; }
+.be-file-chosen span:nth-child(2) {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.be-file-remove {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0 2px;
+}
+.be-file-remove:hover { color: #ff6b6b; }
+
+.be-resume-on-file {
+    font-size: 0.8rem;
+    color: #4caf50;
+    padding: 4px 0;
+}
+
+.be-resume-summary {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.be-summary-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.be-summary-text {
+    font-size: 0.8rem;
+    color: var(--text);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    max-height: 180px;
+    overflow-y: auto;
+    font-family: 'Inter', monospace;
+}
+
+.be-primary-btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: 100%;
+}
+
+.be-primary-btn:hover {
+    background: var(--primary-dark);
+    transform: translateY(-1px);
+}
+
+.be-primary-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.be-status-msg {
+    font-size: 0.8rem;
+    text-align: center;
+    min-height: 1.2em;
+}
+
+.be-status-ok {
+    color: #4caf50;
+}
+
+.be-status-err {
+    color: #ff6b6b;
+}

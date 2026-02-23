@@ -290,6 +290,13 @@ async function attachAnalyzer(composeBox, initialEditor) {
                     </svg>
                     <span>${authed ? 'Analyze' : 'Locked'}</span>
                 </button>
+                <button type="button" class="be-draft-btn" ${authed ? '' : 'disabled'}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                    </svg>
+                    <span>${authed ? 'Draft' : 'Locked'}</span>
+                </button>
             </div>
         </div>
         <div class="be-results-panel"></div>
@@ -307,6 +314,7 @@ async function attachAnalyzer(composeBox, initialEditor) {
 
     // Setup click handler
     const analyzeBtn = analyzer.querySelector(".be-analyze-btn");
+    const draftBtn = analyzer.querySelector(".be-draft-btn");
     const contextInput = analyzer.querySelector(".be-context-input");
     const resultsPanel = analyzer.querySelector(".be-results-panel");
 
@@ -416,6 +424,58 @@ async function attachAnalyzer(composeBox, initialEditor) {
             <span>Analyze</span>
         `;
     });
+
+    draftBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const jobDesc = prompt('What is this email for?\n(e.g. "Software Engineer role at Google", "cold email to UF professor about research")');
+        if (!jobDesc || !jobDesc.trim()) return;
+
+        draftBtn.disabled = true;
+        draftBtn.innerHTML = '<div class="be-spinner"></div><span>Drafting...</span>';
+        showLoading(resultsPanel);
+
+        const token = await getContentAccessToken();
+        if (!token) {
+            showError(resultsPanel, 'Please sign in via the BetterEmail popup first.');
+            draftBtn.disabled = false;
+            draftBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span>Draft</span>`;
+            return;
+        }
+
+        try {
+            const res = await apiFetch(`${getApiBase()}/draft-email`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ jobDescription: jobDesc })
+            });
+
+            if (res.ok) {
+                const draft = res.data.draft || '';
+                // Insert draft into the Gmail compose field
+                const editor = findEditorInCompose(composeBox) || storedEditor;
+                if (editor) {
+                    editor.focus();
+                    document.execCommand('selectAll');
+                    document.execCommand('insertText', false, draft);
+                }
+                resultsPanel.classList.remove('visible');
+                resultsPanel.innerHTML = '';
+            } else {
+                showError(resultsPanel, res.data?.error || 'Draft failed. Make sure your resume is saved in Settings.');
+            }
+        } catch (err) {
+            console.error('[BetterEmail] Draft error:', err);
+            showError(resultsPanel, "Can't reach server. Is the backend running on localhost:3000?");
+        }
+
+        draftBtn.disabled = false;
+        draftBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span>Draft</span>`;
+    });
 }
 
 
@@ -459,6 +519,7 @@ function refreshAnalyzerAuth(authed) {
     document.querySelectorAll('[data-be-analyzer]').forEach(analyzer => {
         const input = analyzer.querySelector('.be-context-input');
         const btn = analyzer.querySelector('.be-analyze-btn');
+        const draft = analyzer.querySelector('.be-draft-btn');
         if (input) {
             input.disabled = !authed;
             input.placeholder = authed
@@ -468,6 +529,10 @@ function refreshAnalyzerAuth(authed) {
         if (btn) {
             btn.disabled = !authed;
             btn.querySelector('span').textContent = authed ? 'Analyze' : 'Locked';
+        }
+        if (draft) {
+            draft.disabled = !authed;
+            draft.querySelector('span').textContent = authed ? 'Draft' : 'Locked';
         }
     });
 }

@@ -37,7 +37,13 @@
         </div>
     </div>
 
-    <div class="main-content">
+    <!-- Tab navigation (shown when signed in) -->
+    <div class="be-tabs" id="be-tabs" style="display:none;">
+        <button class="be-tab be-tab-active" data-tab="main">Main</button>
+        <button class="be-tab" data-tab="settings">Settings</button>
+    </div>
+
+    <div class="main-content" id="be-tab-main">
 
         <div class="reminders-section" id="reminders-section">
             <div class="reminders-header">
@@ -67,6 +73,34 @@
         </div>
 
         <div class="results-container" id="results-container"></div>
+    </div>
+
+    <!-- Settings tab panel -->
+    <div class="main-content be-tab-panel" id="be-tab-settings" style="display:none;">
+        <div class="be-settings-section">
+            <h3 class="be-settings-title">Your Resume</h3>
+            <div class="be-resume-on-file" id="be-resume-on-file" style="display:none;">
+                ✅ Resume on file — upload a new PDF to replace it.
+            </div>
+            <p class="be-settings-desc">Upload your resume as a PDF. BetterEmail will use it to draft personalized outreach emails directly in Gmail.</p>
+            <div class="be-upload-zone" id="be-upload-zone">
+                <input type="file" id="be-resume-file" accept=".pdf" style="display:none;">
+                <div class="be-upload-icon">📄</div>
+                <div class="be-upload-text">Drop your PDF here or <span class="be-upload-link" id="be-upload-browse">browse</span></div>
+                <div class="be-upload-hint">Max 5 MB · text-based PDFs only</div>
+            </div>
+            <div class="be-file-chosen" id="be-file-chosen" style="display:none;">
+                <span class="be-file-icon">📎</span>
+                <span id="be-file-name-display"></span>
+                <button class="be-file-remove" id="be-file-remove">✕</button>
+            </div>
+            <button id="be-resume-save" class="be-primary-btn" disabled>Upload Resume</button>
+            <div id="be-resume-status" class="be-status-msg"></div>
+            <div class="be-resume-summary" id="be-resume-summary" style="display:none;">
+                <div class="be-summary-label">AI Summary</div>
+                <div class="be-summary-text" id="be-summary-text"></div>
+            </div>
+        </div>
     </div>
 
     <script src="config.js"></script>

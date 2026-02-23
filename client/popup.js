@@ -3,7 +3,8 @@
  * Extension Popup Controller
  */
 
-const API_URL = (typeof BE_CONFIG !== 'undefined' ? BE_CONFIG.API_URL : "http://localhost:3000") + "/analyze-email";
+const API_BASE = typeof BE_CONFIG !== 'undefined' ? BE_CONFIG.API_URL : "http://localhost:3000";
+const API_URL = API_BASE + "/analyze-email";
 
 /* =====================================================
    DOM REFERENCES
@@ -261,18 +262,25 @@ async function initAuthUI() {
 
     const session = await getSession();
 
+    const tabs = document.getElementById("be-tabs");
+
     if (session && session.access_token) {
         // Signed in
         if (authCard) authCard.style.display = "none";
         if (mainContent) mainContent.style.display = "flex";
+        if (tabs) tabs.style.display = "flex";
         if (userBar) userBar.style.display = "flex";
         if (userEmail && session.user) {
             userEmail.textContent = session.user.email || "";
         }
+        // Load saved resume into the settings tab
+        loadResume(session.access_token);
     } else {
         // Signed out — hide everything except auth card
         if (authCard) authCard.style.display = "flex";
         if (mainContent) mainContent.style.display = "none";
+        if (tabs) tabs.style.display = "none";
+        document.getElementById("be-tab-settings").style.display = "none";
         if (userBar) userBar.style.display = "none";
     }
 }
@@ -302,6 +310,141 @@ document.getElementById("be-signout-btn")?.addEventListener("click", async () =>
 
 // Initialize auth UI on popup open
 initAuthUI();
+
+
+/* =====================================================
+   TAB NAVIGATION
+===================================================== */
+
+document.querySelectorAll('.be-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.be-tab').forEach(t => t.classList.remove('be-tab-active'));
+        document.getElementById('be-tab-main').style.display = 'none';
+        document.getElementById('be-tab-settings').style.display = 'none';
+        tab.classList.add('be-tab-active');
+        document.getElementById(`be-tab-${tab.dataset.tab}`).style.display = 'flex';
+    });
+});
+
+
+/* =====================================================
+   RESUME LOAD / SAVE
+===================================================== */
+
+async function loadResume(token) {
+    try {
+        const res = await fetch(`${API_BASE}/user/resume`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            const indicator = document.getElementById('be-resume-on-file');
+            const summary = document.getElementById('be-resume-summary');
+            const summaryText = document.getElementById('be-summary-text');
+            if (indicator) indicator.style.display = data.resume_text ? 'block' : 'none';
+            if (data.resume_summary) {
+                if (summaryText) summaryText.textContent = data.resume_summary;
+                if (summary) summary.style.display = 'block';
+            } else {
+                if (summary) summary.style.display = 'none';
+            }
+        }
+    } catch (err) {
+        console.error('[BetterEmail] Failed to load resume:', err);
+    }
+}
+
+/* ---- PDF upload UI wiring ---- */
+const resumeFileInput = document.getElementById('be-resume-file');
+const uploadZone = document.getElementById('be-upload-zone');
+const fileChosen = document.getElementById('be-file-chosen');
+const fileNameDisplay = document.getElementById('be-file-name-display');
+const fileRemove = document.getElementById('be-file-remove');
+const resumeSave = document.getElementById('be-resume-save');
+const resumeStatus = document.getElementById('be-resume-status');
+
+document.getElementById('be-upload-browse')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    resumeFileInput?.click();
+});
+uploadZone?.addEventListener('click', () => resumeFileInput?.click());
+uploadZone?.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('be-upload-drag'); });
+uploadZone?.addEventListener('dragleave', () => uploadZone.classList.remove('be-upload-drag'));
+uploadZone?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('be-upload-drag');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) setChosenFile(file);
+});
+resumeFileInput?.addEventListener('change', () => {
+    const file = resumeFileInput.files?.[0];
+    if (file) setChosenFile(file);
+});
+
+function setChosenFile(file) {
+    if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+        if (resumeStatus) {
+            resumeStatus.textContent = 'Please select a PDF file.';
+            resumeStatus.className = 'be-status-msg be-status-err';
+        }
+        return;
+    }
+    if (fileNameDisplay) fileNameDisplay.textContent = file.name;
+    if (uploadZone) uploadZone.style.display = 'none';
+    if (fileChosen) fileChosen.style.display = 'flex';
+    if (resumeSave) resumeSave.disabled = false;
+    if (resumeStatus) { resumeStatus.textContent = ''; resumeStatus.className = 'be-status-msg'; }
+}
+
+fileRemove?.addEventListener('click', () => {
+    if (resumeFileInput) resumeFileInput.value = '';
+    if (uploadZone) uploadZone.style.display = 'flex';
+    if (fileChosen) fileChosen.style.display = 'none';
+    if (resumeSave) resumeSave.disabled = true;
+    if (resumeStatus) { resumeStatus.textContent = ''; resumeStatus.className = 'be-status-msg'; }
+});
+
+resumeSave?.addEventListener('click', async () => {
+    const file = resumeFileInput?.files?.[0];
+    if (!file) return;
+
+    if (resumeStatus) { resumeStatus.textContent = 'Uploading...'; resumeStatus.className = 'be-status-msg'; }
+    if (resumeSave) resumeSave.disabled = true;
+
+    try {
+        const token = typeof getAccessToken === 'function' ? await getAccessToken() : null;
+        if (!token) {
+            if (resumeStatus) { resumeStatus.textContent = 'Not signed in.'; resumeStatus.className = 'be-status-msg be-status-err'; }
+            if (resumeSave) resumeSave.disabled = false;
+            return;
+        }
+        const formData = new FormData();
+        formData.append('resume', file);
+
+        const res = await fetch(`${API_BASE}/user/resume/upload`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+            body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+            if (resumeStatus) {
+                resumeStatus.textContent = data.summary
+                    ? `Resume uploaded! AI summary generated. (${data.characters.toLocaleString()} chars)`
+                    : `Resume saved (${data.characters.toLocaleString()} chars). AI summary unavailable — check server logs.`;
+                resumeStatus.className = 'be-status-msg be-status-ok';
+            }
+            // Refresh the summary panel with the newly stored text
+            const uploadToken = typeof getAccessToken === 'function' ? await getAccessToken() : token;
+            if (uploadToken) await loadResume(uploadToken);
+        } else {
+            if (resumeStatus) { resumeStatus.textContent = data.error || 'Upload failed.'; resumeStatus.className = 'be-status-msg be-status-err'; }
+        }
+    } catch (err) {
+        if (resumeStatus) { resumeStatus.textContent = 'Could not reach server.'; resumeStatus.className = 'be-status-msg be-status-err'; }
+    }
+    if (resumeSave) resumeSave.disabled = false;
+});
 
 
 /* =====================================================
