@@ -580,8 +580,6 @@
 /* Fixed chip floating below Gmail's header, top-right of the page */
 .be-reminders-panel {
     position: fixed;
-    top: 72px;
-    right: 270px;
     font-family: 'Google Sans', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
     z-index: 9999;
 }

@@ -800,6 +800,19 @@ function tryInjectPanel() {
 
     document.body.appendChild(panel);
 
+    const searchForm = document.querySelector('form[role="search"]');
+    if (searchForm) {
+        function positionPanel() {
+            const rect = searchForm.getBoundingClientRect();
+            // Position to the right of the scraper trigger (scraper is at +56, toggle is at +12)
+            panel.style.top = (rect.top + 4) + 'px';
+            panel.style.left = (rect.right + 96) + 'px';
+        }
+        positionPanel();
+        window.addEventListener('resize', positionPanel);
+        setInterval(positionPanel, 2000);
+    }
+
     // Toggle dropdown open/closed
     panel.querySelector("#be-panel-toggle").addEventListener("click", e => {
         e.stopPropagation();
