@@ -780,6 +780,10 @@ function tryInjectPanel() {
     // Wait for body to be available
     if (!document.body) return false;
 
+    // Wait for Gmail search bar
+    const searchForm = document.querySelector('form[role="search"]');
+    if (!searchForm) return false;
+
     const panel = document.createElement("div");
     panel.id = "be-reminders-panel";
     panel.className = "be-reminders-panel";
@@ -800,18 +804,15 @@ function tryInjectPanel() {
 
     document.body.appendChild(panel);
 
-    const searchForm = document.querySelector('form[role="search"]');
-    if (searchForm) {
-        function positionPanel() {
-            const rect = searchForm.getBoundingClientRect();
-            // Position to the right of the scraper trigger (scraper is at +56, toggle is at +12)
-            panel.style.top = (rect.top + 4) + 'px';
-            panel.style.left = (rect.right + 96) + 'px';
-        }
-        positionPanel();
-        window.addEventListener('resize', positionPanel);
-        setInterval(positionPanel, 2000);
-    }
+    function positionPanel() {
+        const rect = searchForm.getBoundingClientRect();
+        // Position to the right of the scraper trigger with equal 8px spacing, and vertically centered.
+        // Scraper is center-aligned at +24px, Follow-ups panel is ~32px tall, so top offset is +8px.
+        panel.style.top = (rect.top + 8) + 'px';
+        panel.style.left = (rect.right + 104) + 'px';
+    } positionPanel();
+    window.addEventListener('resize', positionPanel);
+    setInterval(positionPanel, 2000);
 
     // Toggle dropdown open/closed
     panel.querySelector("#be-panel-toggle").addEventListener("click", e => {
