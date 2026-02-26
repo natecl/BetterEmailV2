@@ -34,9 +34,9 @@ AI Email Agent & Quality Analyzer: Anthropic Claude 4.5 (Sonnet or Opus)
 
 Why: While Gemini is great for data, Claude is widely considered the "best writer" in 2026. For features like "suggesting changes to be more professional," Claude produces more natural, less "robotic" prose that users actually want to send.
 
-Semantic Search: OpenAI (text-embedding-3-large) + MongoDB Atlas
+Semantic Search: OpenAI (text-embedding-3-large) + Supabase (pgvector)
 
-Why: To make "Email from 2 months ago" work, you don't need a full LLM; you need Embeddings. OpenAI’s embedding models are the industry standard for accuracy. You store these "vector" versions of emails in your existing MongoDB database to keep your tech stack lean.
+Why: To make "Email from 2 months ago" work, you don't need a full LLM; you need Embeddings. OpenAI’s embedding models are the industry standard for accuracy. You store these "vector" versions of emails in your existing Supabase database using pgvector to keep your tech stack lean.
 
 WebScraper for Lead Gen: Firecrawl API
 
