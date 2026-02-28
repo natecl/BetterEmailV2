@@ -119,12 +119,15 @@ function init() {
     // Inject the sidebar
     injectSidebar();
 
-    // Check every second for compose windows (still needed for send-button listener)
+    // Check every second for compose windows
     setInterval(scanForComposeWindows, 1000);
 
     // Also watch for DOM changes
     const observer = new MutationObserver(scanForComposeWindows);
     observer.observe(document.body, { childList: true, subtree: true });
+
+    // Safely enforce compose window offset mathematically against Gmail's engine
+    observeComposeWindows();
 }
 
 if (document.body) {
@@ -1161,6 +1164,14 @@ function renderSidebarResults(container, raw) {
 ========================================================= */
 
 function findAnyVisibleEditor() {
+    // Priority 1: The glowing active focused compose window
+    const activeCompose = document.querySelector('.nH.Hd[role="dialog"].be-compose-active');
+    if (activeCompose) {
+        const activeEditor = activeCompose.querySelector('div[contenteditable="true"][role="textbox"], .Am.Al.editable, [aria-label="Message Body"]');
+        if (activeEditor) return activeEditor;
+    }
+
+    // Priority 2: Fallback to any visible editor
     const selectors = [
         '[aria-label="Message Body"]',
         '[aria-label="Body"]',
@@ -1195,10 +1206,64 @@ function getEditorContent(editor) {
 
 
 /* =========================================================
-   SCAN FOR COMPOSE WINDOWS (for send button listener only)
+   SCAN FOR COMPOSE WINDOWS (for send button listener & focus tracking)
 ========================================================= */
 
 function scanForComposeWindows() {
+    // 1. Manage Focus Glow States and Auto-minimize
+    const composeDialogs = Array.from(document.querySelectorAll('.nH.Hd[role="dialog"]'));
+
+    // Find dialogs we haven't processed yet
+    const newDialogs = composeDialogs.filter(dialog => !dialog.classList.contains('be-focus-injected'));
+
+    // If new compose windows just opened, and there are already existing ones, minimize the older ones
+    if (newDialogs.length > 0) {
+        const isSidebarActive = document.body.classList.contains('be-sidebar-active');
+
+        // Remove glow from all previous windows
+        document.querySelectorAll('.nH.Hd[role="dialog"].be-compose-active').forEach(d => {
+            d.classList.remove('be-compose-active');
+        });
+
+        // Apply glow to the newest window
+        newDialogs[newDialogs.length - 1].classList.add('be-compose-active');
+
+        if (isSidebarActive && composeDialogs.length > 1) {
+            composeDialogs.forEach(dialog => {
+                // If it's an old dialog, natively minimize it
+                if (dialog.classList.contains('be-focus-injected')) {
+                    const minimizeBtn = dialog.querySelector('[aria-label="Minimize"], [data-tooltip="Minimize"], [aria-label*="Minimize"], [data-tooltip*="Minimize"]');
+                    if (minimizeBtn) {
+                        minimizeBtn.click();
+                    }
+                }
+            });
+        }
+    }
+
+    composeDialogs.forEach(dialog => {
+        if (!dialog.classList.contains('be-focus-injected')) {
+            dialog.classList.add('be-focus-injected');
+
+            // Add focus-in listener to make this window glow
+            dialog.addEventListener('focusin', () => {
+                document.querySelectorAll('.nH.Hd[role="dialog"].be-compose-active').forEach(d => {
+                    d.classList.remove('be-compose-active');
+                });
+                dialog.classList.add('be-compose-active');
+            });
+
+            // Allow clicking anywhere on the dialog to trigger focus glow
+            dialog.addEventListener('click', () => {
+                document.querySelectorAll('.nH.Hd[role="dialog"].be-compose-active').forEach(d => {
+                    d.classList.remove('be-compose-active');
+                });
+                dialog.classList.add('be-compose-active');
+            }, true);
+        }
+    });
+
+    // 2. Add Inline "Analyze" Send Button
     const editors = document.querySelectorAll(
         '[aria-label="Message Body"], ' +
         '[g_editable="true"], ' +
@@ -1610,9 +1675,31 @@ function initSemanticSearchBar() {
     document.body.appendChild(toggleBtn);
 
     function positionToggle() {
-        const rect = searchForm.getBoundingClientRect();
-        toggleBtn.style.top = (rect.top + 4) + 'px';
-        toggleBtn.style.left = (rect.right + 12) + 'px';
+        const helpBtn = document.querySelector('header#gb a[href*="support.google.com"], header#gb a[aria-label*="Support"], header#gb a[aria-label*="Help"]');
+        const isSidebarActive = document.body.classList.contains('be-sidebar-active');
+
+        if (isSidebarActive && helpBtn) {
+            // Position cleanly over the help button when sidebar open
+            const rect = helpBtn.getBoundingClientRect();
+            toggleBtn.style.top = rect.top + 'px';
+            toggleBtn.style.left = rect.left + 'px';
+            toggleBtn.style.width = rect.width + 'px';
+            toggleBtn.style.height = rect.height + 'px';
+            toggleBtn.style.background = ''; // Allow CSS hover to work
+            toggleBtn.style.boxShadow = 'none';
+            helpBtn.style.opacity = '0';
+        } else {
+            // Default position next to search bar
+            if (helpBtn) helpBtn.style.opacity = '1';
+            toggleBtn.style.width = '40px';
+            toggleBtn.style.height = '40px';
+            toggleBtn.style.background = '';
+            toggleBtn.style.boxShadow = '';
+
+            const rect = searchForm.getBoundingClientRect();
+            toggleBtn.style.top = (rect.top + 4) + 'px';
+            toggleBtn.style.left = (rect.right + 12) + 'px';
+        }
     }
     positionToggle();
     window.addEventListener('resize', positionToggle);
@@ -1800,3 +1887,32 @@ function refreshSemanticSearchAuth(authed) {
     if (!overlay) return;
     applySemanticSearchAuthState(overlay, authed);
 }
+
+/* =========================================================
+   COMPOSE WINDOW LAYOUT KEEPER
+========================================================= */
+
+// Gmail actively recalculates the "right" style for drafts
+// Standard CSS overrides break minimizing and multi-window math.
+// This keeper constantly enforces a robust margin offset without breaking native math.
+function observeComposeWindows() {
+    setInterval(() => {
+        const isSidebarActive = document.body.classList.contains('be-sidebar-active');
+        if (!isSidebarActive) return;
+
+        // 1. Shift master containers leftwards safely to clear the sidebar
+        const masterContainers = document.querySelectorAll('.no, .dw, .inboxsdk__compose');
+        masterContainers.forEach(container => {
+            // Apply a direct margin-right override via inline style to beat Gmail's CSS
+            if (container.style.marginRight !== '345px') {
+                container.style.setProperty('margin-right', '345px', 'important');
+                container.style.setProperty('transition', 'margin-right 0.3s ease', 'important');
+            }
+        });
+
+        // Removed hardcoded width constraints to allow Gmail to naturally expand
+        // its internal buttons without clipping or crushing.
+    }, 500); // Check every half-second to override Gmail's engine
+}
+
+/* EOF */
