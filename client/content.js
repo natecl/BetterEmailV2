@@ -489,8 +489,12 @@ function wireAnalyzer(sidebar) {
         const emailText = editor ? getEditorContent(editor) : '';
         const context = contextInput.value.trim();
 
+        if (!editor) {
+            showSidebarError(resultsArea, "No compose window detected. Open a Gmail compose or reply box, then click Analyze.");
+            return;
+        }
         if (!emailText) {
-            showSidebarError(resultsArea, "Open a compose window and write your email first, then click Analyze.");
+            showSidebarError(resultsArea, "Your compose window appears to be empty. Write your email first, then click Analyze.");
             return;
         }
         if (!context) {
@@ -1019,9 +1023,17 @@ function renderSidebarReminders(reminders) {
         return a.dueTime - b.dueTime;
     });
 
+    // Kick off background summary generation for any reminder that doesn't have one yet
+    sorted.filter(r => !r.summary).forEach(r => generateAndStoreSummary(r));
+
     sorted.forEach(r => {
         const isFired = r.fired === true;
         const { label, overdue } = isFired ? { label: "Follow up now!", overdue: true } : formatReminderTime(r.dueTime);
+
+        // Description line below subject: AI summary or "Summarizing…" placeholder
+        const descriptionLine = r.summary
+            ? `<div class="wm-sidebar-ri-subject-line">${escapeHTML(r.summary)}</div>`
+            : `<div class="wm-sidebar-ri-generating">Summarizing…</div>`;
 
         const item = document.createElement("div");
         item.className = "wm-sidebar-reminder-item" + (isFired ? " wm-ri-fired" : "");
@@ -1029,6 +1041,7 @@ function renderSidebarReminders(reminders) {
             <div class="wm-sidebar-ri-dot ${isFired ? "wm-ri-dot-fired" : ""}"></div>
             <div class="wm-sidebar-ri-info">
                 <div class="wm-sidebar-ri-subject" title="${escapeHTML(r.subject)}">${escapeHTML(r.subject)}</div>
+                ${descriptionLine}
                 <div class="wm-sidebar-ri-due ${isFired ? "wm-ri-due-fired" : ""}">${label}</div>
             </div>
             <button class="wm-sidebar-ri-dismiss" title="Dismiss">&#x2715;</button>
@@ -1163,16 +1176,27 @@ function renderSidebarResults(container, raw) {
    FIND EDITOR FUNCTIONS (for sidebar analyzer)
 ========================================================= */
 
+function _wmIsVisible(el) {
+    // Check computed style — more reliable than bounding rect for compose windows
+    try {
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+    } catch (e) { /* ignore */ }
+    return true;
+}
+
 function findAnyVisibleEditor() {
-    // Priority 1: The glowing active focused compose window
+    const sidebar = document.getElementById('wm-sidebar-wrapper');
+
+    // Priority 1: The active focused compose dialog (our own tracking)
     const activeCompose = document.querySelector('.nH.Hd[role="dialog"].wm-compose-active');
     if (activeCompose) {
-        const activeEditor = activeCompose.querySelector('div[contenteditable="true"][role="textbox"], .Am.Al.editable, [aria-label="Message Body"]');
-        if (activeEditor) return activeEditor;
+        const ed = activeCompose.querySelector('div[contenteditable="true"]');
+        if (ed) return ed;
     }
 
-    // Priority 2: Fallback to any visible editor
-    const selectors = [
+    // Priority 2: Named Gmail selectors (not inside the Wingman sidebar)
+    const namedSelectors = [
         '[aria-label="Message Body"]',
         '[aria-label="Body"]',
         '[g_editable="true"]',
@@ -1181,16 +1205,26 @@ function findAnyVisibleEditor() {
         'div.Am.Al.editable',
         'div.aoI[contenteditable="true"]'
     ];
-
-    for (const selector of selectors) {
-        const editors = document.querySelectorAll(selector);
-        for (const editor of editors) {
-            const rect = editor.getBoundingClientRect();
-            if (rect.width > 100 && rect.height > 30 && rect.top > 0) {
-                return editor;
-            }
+    for (const sel of namedSelectors) {
+        for (const ed of document.querySelectorAll(sel)) {
+            if (sidebar && sidebar.contains(ed)) continue;
+            if (_wmIsVisible(ed)) return ed;
         }
     }
+
+    // Priority 3: Any contenteditable inside any visible dialog
+    for (const dialog of document.querySelectorAll('div[role="dialog"]')) {
+        if (!_wmIsVisible(dialog)) continue;
+        const ed = dialog.querySelector('div[contenteditable="true"]');
+        if (ed && _wmIsVisible(ed)) return ed;
+    }
+
+    // Priority 4: Last resort — any visible contenteditable not inside the sidebar
+    for (const ed of document.querySelectorAll('div[contenteditable="true"]')) {
+        if (sidebar && sidebar.contains(ed)) continue;
+        if (_wmIsVisible(ed)) return ed;
+    }
+
     return null;
 }
 
@@ -1274,6 +1308,8 @@ function scanForComposeWindows() {
     editors.forEach(editor => {
         const composeBox = editor.closest('div[role="dialog"]') ||
             editor.closest('.M9') ||
+            editor.closest('.ip') ||   // inline reply wrapper
+            editor.closest('.aDh') ||  // another inline reply wrapper Gmail uses
             editor.closest('form') ||
             editor.closest('.nH.Hd');
 
@@ -1333,20 +1369,22 @@ function trySendButton(composeBox) {
 
     sendBtn.dataset.wmReminderAttached = "true";
     sendBtn.addEventListener("click", () => {
-        const subject = document.querySelector('input[name="subjectbox"]')?.value?.trim() || "your email";
+        const subject = document.querySelector('input[name="subjectbox"]')?.value?.trim() || "";
+        const editor = findAnyVisibleEditor();
+        const bodySnippet = editor?.innerText?.trim()?.substring(0, 500) || "";
         const currentThreadId = getCurrentThreadId();
         const currentThreadPath = getCurrentThreadPath();
-        if (currentThreadId) autoDismissReminderForThread(currentThreadId);
         const pendingThread = { id: currentThreadId, path: currentThreadPath };
         if (!currentThreadPath) watchForSentThread(pendingThread);
-        setTimeout(() => showReminderPrompt(subject, pendingThread), 600);
+        // AI classifies the email and handles dismissing/prompting
+        classifyAndHandleSend(subject, bodySnippet, currentThreadId, pendingThread);
     });
 
     console.log("[Wingman] Send button listener attached");
     return true;
 }
 
-async function showReminderPrompt(subject, pendingThread = {}) {
+async function showReminderPrompt(subject, pendingThread = {}, bodySnippet = "") {
     if (!(await isAuthenticated())) return;
 
     document.querySelector(".wm-reminder-toast")?.remove();
@@ -1383,25 +1421,25 @@ async function showReminderPrompt(subject, pendingThread = {}) {
     toast.dataset.autoDismiss = autoDismiss;
 
     toast.querySelector(".wm-reminder-close").addEventListener("click", () => dismissToast(toast));
-    attachQuickOptionListeners(toast, subject, pendingThread);
+    attachQuickOptionListeners(toast, subject, pendingThread, bodySnippet);
 }
 
-function attachQuickOptionListeners(toast, subject, pendingThread = {}) {
+function attachQuickOptionListeners(toast, subject, pendingThread = {}, bodySnippet = "") {
     toast.querySelector("[data-dismiss]").addEventListener("click", () => dismissToast(toast));
 
     toast.querySelectorAll("[data-ms]").forEach(btn => {
         btn.addEventListener("click", () => {
-            scheduleReminder(subject, parseInt(btn.dataset.ms), pendingThread.id, pendingThread.path);
+            generateSummaryAndSchedule(subject, bodySnippet, parseInt(btn.dataset.ms), pendingThread.id, pendingThread.path);
             showReminderConfirm(toast, btn.dataset.label);
         });
     });
 
     toast.querySelector(".wm-reminder-custom-trigger").addEventListener("click", () => {
-        showCustomInput(toast, subject, pendingThread);
+        showCustomInput(toast, subject, pendingThread, bodySnippet);
     });
 }
 
-function showCustomInput(toast, subject, pendingThread = {}) {
+function showCustomInput(toast, subject, pendingThread = {}, bodySnippet = "") {
     const options = toast.querySelector(".wm-reminder-options");
     options.innerHTML = `
         <div class="wm-reminder-custom">
@@ -1437,7 +1475,7 @@ function showCustomInput(toast, subject, pendingThread = {}) {
         const unitNames = { min: "minute", hr: "hour", day: "day" };
         const ms = val * multipliers[unit];
         const label = `${val} ${unitNames[unit]}${val !== 1 ? "s" : ""}`;
-        scheduleReminder(subject, ms, pendingThread.id, pendingThread.path);
+        generateSummaryAndSchedule(subject, bodySnippet, ms, pendingThread.id, pendingThread.path);
         showReminderConfirm(toast, label);
     });
 
@@ -1454,7 +1492,7 @@ function showCustomInput(toast, subject, pendingThread = {}) {
             <button class="wm-reminder-btn wm-reminder-custom-trigger">Custom</button>
             <button class="wm-reminder-btn wm-reminder-skip" data-dismiss>Skip</button>
         `;
-        attachQuickOptionListeners(toast, subject, pendingThread);
+        attachQuickOptionListeners(toast, subject, pendingThread, bodySnippet);
     });
 
     numInput.focus();
@@ -1480,13 +1518,13 @@ function dismissToast(toast) {
     setTimeout(() => toast.remove(), 300);
 }
 
-function scheduleReminder(subject, ms, capturedThreadId = null, capturedThreadPath = null) {
+function scheduleReminder(subject, ms, capturedThreadId = null, capturedThreadPath = null, summary = null) {
     const id = "wm_reminder_" + Date.now();
     const dueTime = Date.now() + ms;
     const threadId = capturedThreadId || getCurrentThreadId();
     const threadPath = capturedThreadPath || getCurrentThreadPath();
     try {
-        chrome.runtime.sendMessage({ type: "SET_REMINDER", id, subject, dueTime, threadId, threadPath });
+        chrome.runtime.sendMessage({ type: "SET_REMINDER", id, subject, summary, dueTime, threadId, threadPath });
     } catch (e) {
         console.warn("[Wingman] Extension context invalidated — please refresh the page.", e);
     }
@@ -1597,14 +1635,174 @@ function watchForSentThread(pendingThread) {
     }
 }
 
-function autoDismissReminderForThread(threadId) {
-    chrome.storage.local.get("be_reminders", ({ be_reminders = [] }) => {
-        const toRemove = be_reminders.filter(r => r.threadId === threadId);
-        if (toRemove.length === 0) return;
-        const updated = be_reminders.filter(r => r.threadId !== threadId);
-        chrome.storage.local.set({ be_reminders: updated });
-        toRemove.forEach(r => chrome.runtime.sendMessage({ type: "CLEAR_ALARM", id: r.id }));
+/* =========================================================
+   AI HELPERS — server calls for follow-up classification & summaries
+========================================================= */
+
+/**
+ * Call a server AI endpoint with the user's auth token.
+ * Returns the parsed JSON response data, or null on failure.
+ */
+function wmServerAI(endpoint, body) {
+    return new Promise((resolve) => {
+        chrome.storage.local.get('wm_supabase_session', ({ wm_supabase_session }) => {
+            const token = wm_supabase_session?.access_token;
+            if (!token) { resolve(null); return; }
+            chrome.runtime.sendMessage({
+                type: 'API_FETCH',
+                url: 'http://localhost:3000' + endpoint,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(body)
+            }, (response) => {
+                resolve(response?.ok ? response.data : null);
+            });
+        });
     });
+}
+
+/**
+ * Decide whether a sent email is a follow-up and act accordingly.
+ *
+ * Rules (evaluated in order, no blocking AI calls in the hot path):
+ *  1. threadId matches a stored reminder → dismiss it, no prompt
+ *  2. Subject starts with "Re:" → it's a reply, try subject-match dismiss, no prompt
+ *  3. Everything else → show "Set a reminder?" prompt immediately
+ *
+ * Gemini is NOT used for the prompt decision (too slow, too risky of false positives).
+ * It is only used in generateSummaryAndSchedule for the reminder label.
+ */
+function classifyAndHandleSend(subject, bodySnippet, currentThreadId, pendingThread) {
+    const subjectIsReply = /^re:/i.test(subject);
+
+    if (currentThreadId) {
+        autoDismissReminderForThread(currentThreadId, (wasCleared) => {
+            if (wasCleared) return; // Reminder dismissed — done
+
+            if (subjectIsReply) {
+                // Re: subject with a thread open — try subject-match as backup
+                autoDismissReminderBySubjectMatch(subject);
+                // No prompt for replies
+            } else {
+                // New email composed while a thread was open in the background.
+                // The thread in the URL is unrelated — treat this as a new email.
+                showReminderPrompt(subject || "your email", pendingThread, bodySnippet);
+            }
+        });
+    } else if (subjectIsReply) {
+        // Re: email, no thread in the URL — try subject-match dismiss
+        autoDismissReminderBySubjectMatch(subject);
+        // No prompt for replies
+    } else {
+        // New outgoing email — show prompt immediately
+        showReminderPrompt(subject || "your email", pendingThread, bodySnippet);
+    }
+}
+
+/**
+ * Dismiss reminders whose subject (stripped of Re: prefixes) matches the sent email's subject.
+ * Useful when replying but the threadId couldn't be captured.
+ */
+function autoDismissReminderBySubjectMatch(subject, callback) {
+    const normalize = s => s.replace(/^(re:\s*)+/i, '').toLowerCase().trim();
+    const cleanSubject = normalize(subject);
+    if (!cleanSubject) { if (callback) callback(false); return; }
+
+    chrome.storage.local.get("wm_reminders", ({ wm_reminders = [] }) => {
+        const toRemove = wm_reminders.filter(r => normalize(r.subject) === cleanSubject);
+        if (toRemove.length === 0) { if (callback) callback(false); return; }
+
+        const updated = wm_reminders.filter(r => normalize(r.subject) !== cleanSubject);
+        chrome.storage.local.set({ wm_reminders: updated });
+        toRemove.forEach(r => {
+            chrome.runtime.sendMessage({ type: "CLEAR_ALARM", id: r.id });
+            if (r.fired) chrome.runtime.sendMessage({ type: "CLEAR_NOTIFICATION", id: r.id });
+        });
+        setTimeout(() => showFollowUpSentNotification(toRemove[0].subject), 300);
+        if (callback) callback(true);
+    });
+}
+
+/**
+ * Generate an AI summary for an email, then schedule the reminder.
+ * Falls back to the raw subject if the AI call fails or times out.
+ */
+async function generateSummaryAndSchedule(subject, bodySnippet, ms, threadId, threadPath) {
+    let summary = null;
+    try {
+        const r = await Promise.race([
+            wmServerAI('/ai/summarize-email', { subject, body: bodySnippet }),
+            new Promise(resolve => setTimeout(() => resolve(null), 4000))
+        ]);
+        summary = r?.summary || null;
+    } catch (_) {}
+    scheduleReminder(subject, ms, threadId, threadPath, summary);
+}
+
+/**
+ * Generate and persist an AI summary for an existing reminder that has none.
+ * Triggered when the sidebar renders a reminder without a summary.
+ * Writes back to storage → onChanged fires → sidebar re-renders with the summary.
+ */
+async function generateAndStoreSummary(reminder) {
+    try {
+        const r = await Promise.race([
+            wmServerAI('/ai/summarize-email', { subject: reminder.subject, body: '' }),
+            new Promise(resolve => setTimeout(() => resolve(null), 5000))
+        ]);
+        const summary = r?.summary || null;
+        if (!summary || summary === reminder.subject) return; // Nothing useful
+
+        chrome.storage.local.get("wm_reminders", ({ wm_reminders = [] }) => {
+            const updated = wm_reminders.map(rem =>
+                rem.id === reminder.id ? { ...rem, summary } : rem
+            );
+            chrome.storage.local.set({ wm_reminders: updated });
+        });
+    } catch (_) {}
+}
+
+function autoDismissReminderForThread(threadId, callback) {
+    chrome.storage.local.get("wm_reminders", ({ wm_reminders = [] }) => {
+        const toRemove = wm_reminders.filter(r => r.threadId === threadId);
+        if (toRemove.length === 0) {
+            if (callback) callback(false);
+            return;
+        }
+        const updated = wm_reminders.filter(r => r.threadId !== threadId);
+        chrome.storage.local.set({ wm_reminders: updated });
+        toRemove.forEach(r => {
+            // Cancel the scheduled alarm
+            chrome.runtime.sendMessage({ type: "CLEAR_ALARM", id: r.id });
+            // Also dismiss the OS notification if it was already shown (fired reminders)
+            if (r.fired) {
+                chrome.runtime.sendMessage({ type: "CLEAR_NOTIFICATION", id: r.id });
+            }
+        });
+        // Show a brief "follow-up sent" confirmation toast
+        setTimeout(() => showFollowUpSentNotification(toRemove[0].subject), 600);
+        if (callback) callback(true);
+    });
+}
+
+function showFollowUpSentNotification(subject) {
+    document.querySelector(".wm-reminder-toast")?.remove();
+    const toast = document.createElement("div");
+    toast.className = "wm-reminder-toast";
+    toast.innerHTML = `
+        <div class="wm-reminder-confirm">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M20 6L9 17l-5-5"/>
+            </svg>
+            <span>Follow-up sent! Reminder for <strong>${escapeHTML(subject)}</strong> has been cleared.</span>
+        </div>
+    `;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("visible"));
+    setTimeout(() => dismissToast(toast), 3500);
 }
 
 

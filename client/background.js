@@ -15,6 +15,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             wm_reminders.push({
                 id: msg.id,
                 subject: msg.subject,
+                summary: msg.summary || null,
                 dueTime: msg.dueTime,
                 threadId: msg.threadId || null,
                 threadPath: msg.threadPath || null
@@ -28,6 +29,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     } else if (msg.type === "CLEAR_ALARM") {
         // Proxy for content scripts which can't access chrome.alarms directly
         chrome.alarms.clear(msg.id);
+        sendResponse({ success: true });
+    } else if (msg.type === "CLEAR_NOTIFICATION") {
+        // Proxy for content scripts which can't access chrome.notifications directly
+        chrome.notifications.clear(msg.id);
         sendResponse({ success: true });
     } else if (msg.type === "OPEN_TAB") {
         // Proxy for content scripts which can't access chrome.tabs directly

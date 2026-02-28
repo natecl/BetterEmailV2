@@ -1,0 +1,610 @@
+================================================================================
+  WINGMAN V2 — IN-DEPTH TECHNICAL EXPLANATION
+================================================================================
+
+Wingman is a Chrome extension that layers an AI productivity system directly
+on top of Gmail. It never replaces Gmail — it injects a sidebar and intercepts
+user actions to add intelligence on top of the existing interface.
+
+--------------------------------------------------------------------------------
+1. HIGH-LEVEL ARCHITECTURE
+--------------------------------------------------------------------------------
+
+There are two separate runtimes that work together:
+
+  [Chrome Extension]                     [Backend Server]
+  ┌─────────────────────────────────┐    ┌───────────────────────────────┐
+  │  content.js   (Gmail page)      │    │  Express.js  (Node.js)        │
+  │  background.js (Service Worker) │◄──►│  /analyze-email               │
+  │  popup.js      (Toolbar popup)  │    │  /scrape-emails               │
+  │  auth.js       (Auth helpers)   │    │  /gmail/sync                  │
+  └─────────────────────────────────┘    │  /search                      │
+             │                           │  /draft-email                 │
+             ▼                           │  /user/resume                 │
+  [chrome.storage.local]                 └───────────────────────────────┘
+  - Session/tokens                                    │
+  - Active reminders                                  ▼
+                                         ┌────────────────────────┐
+                                         │  Supabase (PostgreSQL) │
+                                         │  + pgvector extension  │
+                                         └────────────────────────┘
+
+The extension communicates with the backend via HTTP. The backend communicates
+with Supabase (database + auth), Google Gmail API, OpenAI (embeddings), and
+OpenRouter/Gemini (AI analysis).
+
+--------------------------------------------------------------------------------
+2. CHROME EXTENSION — FILE BY FILE
+--------------------------------------------------------------------------------
+
+manifest.json
+─────────────
+The extension manifest declares:
+  - permissions: storage, alarms, notifications, tabs, identity
+    • storage    → read/write chrome.storage.local (session, reminders)
+    • alarms     → schedule reminder notifications (background, survives sleep)
+    • notifications → OS-level desktop notifications when reminder fires
+    • tabs       → open Gmail threads in new tabs when reminder is clicked
+    • identity   → run chrome.identity.launchWebAuthFlow for Google OAuth
+  - host_permissions: mail.google.com, supabase.co, googleapis.com, localhost:3000
+    • googleapis.com is needed so background.js can call Gmail API to detect replies
+  - background.service_worker: background.js (runs as Manifest V3 service worker)
+  - content_scripts: config.js + auth.js + content.js injected into all Gmail tabs
+  - action.default_popup: popup.html (the toolbar icon panel)
+
+content.js — The Sidebar (Injected into Gmail)
+───────────────────────────────────────────────
+This is the largest and most complex file (~1600+ lines). It runs inside the
+Gmail tab as a content script, meaning it has access to the Gmail DOM but runs
+in a sandboxed extension context.
+
+  INITIALIZATION:
+    init() is called on DOMContentLoaded (or immediately if body exists).
+    It calls injectSidebar() which appends a fixed-position sidebar panel to
+    document.body. The sidebar shifts Gmail's layout using CSS class injection
+    on document.body and document.documentElement.
+
+  API PROXY PATTERN:
+    Content scripts can't make cross-origin requests to localhost or external
+    APIs. So apiFetch() sends every API call as a message to background.js
+    (type: "API_FETCH"), which makes the actual fetch and sends back the result.
+    This also handles the HTTPS→HTTP mixed-content issue (Gmail is HTTPS,
+    server may be HTTP).
+
+  AUTH HELPERS:
+    - isAuthenticated() → reads wm_supabase_session from chrome.storage.local
+    - getContentSession() → returns the full session object including provider_token
+    - getContentAccessToken() → returns just the Supabase JWT
+    These are read-only helpers; actual sign-in is triggered via background.js.
+
+  SIDEBAR STRUCTURE:
+    buildSidebarHTML() creates the full sidebar HTML in one string. Sections:
+      • Header: BetterEmail logo, user email, sign-out button, collapse button
+      • Auth card: shown when signed out (Sign In with Google button)
+      • Tab navigation: Main | Leads | Search | Settings (hidden when signed out)
+      • Main panel: Follow-up Reminders section + Email Analyzer section
+      • Leads panel: Lead Finder input + results
+      • Search panel: Semantic Search input + sync button
+      • Settings panel: Resume upload for AI-personalized drafts
+
+  SIDEBAR AUTH GATING (refreshSidebarAuth):
+    When signed out:  auth card is shown, all panels are hidden
+    When signed in:   auth card hidden, tabs shown, panels shown
+    Auth state changes are detected via chrome.storage.onChanged listener,
+    so the UI updates instantly without a page refresh when you sign in/out.
+
+  COMPOSE ANALYZER:
+    Gmail compose windows are found by scanForComposeWindows() which polls
+    every 1 second AND uses a MutationObserver on document.body. When a compose
+    box is found (div[role="dialog"] or similar), it attaches a Send button
+    listener (trySendButton). The compose text is read by looking for
+    div[aria-label="Message Body"] or div[contenteditable="true"].
+
+  SEND BUTTON LISTENER (trySendButton):
+    When the user clicks Send:
+    1. Captures the email subject from input[name="subjectbox"]
+    2. Calls getCurrentThreadId() and getCurrentThreadPath() — reads the URL hash
+       to extract the thread ID and folder (e.g. "sent/CwCPbpQH...")
+    3. Calls autoDismissReminderForThread() in case this is a reply to a tracked thread
+    4. Creates a pendingThread object {id, path} — this is mutable so watchForSentThread
+       can update it asynchronously
+    5. If no threadPath yet (new compose email), starts watchForSentThread()
+    6. After 600ms, shows the "Set a follow-up reminder?" toast
+
+  THREAD ID DETECTION:
+    GMAIL_THREAD_ID_RE = /^[A-Za-z0-9_\-]{8,}$/ — validates URL-safe thread IDs.
+    Gmail has TWO thread ID formats:
+      • URL format: "CwCPbpQHJcjrSFlVPxcprfrKKSQmqXb" (alphanumeric, used in URLs)
+      • Internal DOM format: "thread-f:1857966367691616753" (contains colon, NOT usable in URLs)
+    getCurrentThreadId() ONLY uses URL hash strategy. It parses window.location.hash,
+    strips any ?compose=new query params, and validates with the regex.
+    DOM-based strategies were intentionally removed because they return the
+    internal format which breaks navigation URLs.
+
+  WATCH FOR SENT THREAD (watchForSentThread):
+    For new compose emails, Gmail doesn't show the thread URL until after sending.
+    Gmail briefly shows a "Message sent. View message." notification in the DOM.
+    This function sets a MutationObserver on document.body watching for new <a>
+    elements whose href contains "#sent/ID" or "#inbox/ID". When found, it updates
+    pendingThread.path and pendingThread.id. Also watches hashchange in case Gmail
+    navigates to the sent thread directly.
+    Times out after 30 seconds.
+
+  REMINDER TOAST (showReminderPrompt):
+    A small floating card appears after send with options: 1 Day, 3 Days, 1 Week,
+    Custom, Skip. When a time is selected, scheduleReminder() sends a SET_REMINDER
+    message to background.js. The pendingThread object is read at click time (not
+    at toast-creation time) so the watchForSentThread observer has time to populate it.
+
+  REMINDER URL BUILDING (contentReminderUrl):
+    Priority order:
+    1. If reminder.threadPath → "https://mail.google.com/mail/u/0/#sent/ID"
+    2. If reminder.threadId passes GMAIL_THREAD_ID_RE → "#inbox/ID"
+    3. If reminder.subject → Gmail search URL using proper encoding:
+       encodeURIComponent('subject:"Re: email" in:sent').replace(/%20/g, '+')
+       This matches Gmail's own URL format (operators like : and " are encoded).
+    4. Fallback: "#sent"
+
+  AUTO-DISMISS (autoDismissReminderForThread):
+    When the user sends a message in a thread, if a reminder exists for that
+    thread it is silently removed. Matches by BOTH threadId AND threadPath
+    (because some reminders only have one of these populated).
+
+  REPLY DETECTION (checkReplyForThread + hashchange listener):
+    wireReminders() attaches a hashchange listener. Every time the user
+    navigates to a Gmail thread URL, checkReplyForThread() is called.
+    It checks storage for a reminder matching the thread, then if found,
+    sends CHECK_REPLY_FOR_THREAD to background.js with the Google provider_token.
+    Background calls the Gmail API and checks if any message has internalDate
+    > reminder.createdAt. If so, the reminder is dismissed automatically.
+
+  REMINDER PANEL (renderSidebarReminders):
+    Reads wm_reminders from storage, sorts by fired first then dueTime.
+    Renders each reminder as a clickable row. Dismiss button removes from storage.
+    Row click sends OPEN_TAB to background.js (proxy needed because
+    chrome.tabs.create is NOT accessible from content scripts directly).
+    Storage changes trigger re-render via chrome.storage.onChanged.
+
+  LEAD FINDER:
+    User types a prompt like "UF CS professors". On button click, calls
+    POST /scrape-emails on the backend with the Supabase JWT in the Authorization
+    header. Results are rendered as a table with name, email, institution columns.
+    Each row has a Copy and Gmail Compose button.
+
+  SEMANTIC SEARCH:
+    The search input replaces Gmail's native search bar with a custom overlay
+    (initSemanticSearchBar). The "AI" toggle switches between native Gmail search
+    and Wingman semantic search. When active, queries go to POST /search.
+    The Sync button calls POST /gmail/sync to ingest recent emails.
+
+  EMAIL ANALYZER:
+    User opens a compose window, optionally writes context in the sidebar input,
+    then clicks Analyze. The compose body is extracted from the active compose div.
+    Sent to POST /analyze-email, response rendered in the sidebar results area.
+    Draft button calls POST /draft-email which generates a full email draft.
+
+background.js — The Service Worker
+────────────────────────────────────
+Runs persistently as a Chrome MV3 service worker (wakes on events, sleeps otherwise).
+Handles all privileged operations that content scripts can't do directly.
+
+  MESSAGE TYPES:
+    SET_REMINDER:
+      Stores reminder in wm_reminders array in chrome.storage.local.
+      Fields: id (unique timestamp string), subject, dueTime (Unix ms),
+              threadId, threadPath, createdAt (Date.now()).
+      Creates a chrome.alarms entry with name = reminder.id, fires at dueTime.
+
+    CLEAR_ALARM:
+      Proxy for chrome.alarms.clear() (content scripts can't access chrome.alarms).
+
+    OPEN_TAB:
+      Proxy for chrome.tabs.create() (content scripts can't access chrome.tabs).
+      Used by the reminder panel click handler in content.js.
+
+    CHECK_REPLY_FOR_THREAD:
+      Calls Gmail API GET /threads/{threadId}?format=metadata with the user's
+      Google provider_token. If any message.internalDate > reminder.createdAt,
+      the thread has received a reply — the reminder is dismissed from storage
+      and the alarm is cleared. The storage update triggers re-render in the sidebar
+      via the onChanged listener.
+
+    SIGN_IN:
+      Calls signInWithGoogleBackground() which uses chrome.identity.launchWebAuthFlow
+      to run the full Google OAuth + Supabase exchange flow, storing the result
+      in wm_supabase_session.
+
+    SIGN_OUT:
+      Calls Supabase logout endpoint, removes session from storage.
+
+    FILE_UPLOAD:
+      Proxy for multipart form data uploads (PDF resume). Content scripts can't
+      send FormData cross-origin, so this converts base64 → Blob → FormData → fetch.
+
+    API_FETCH:
+      Generic fetch proxy for all server API calls from content.js.
+
+  ALARM HANDLER (chrome.alarms.onAlarm):
+    When an alarm named "wm_reminder_*" fires:
+    1. Finds the matching reminder in storage
+    2. Marks it as fired: true (so it shows as urgent in the sidebar)
+    3. Creates a Chrome OS notification with the email subject
+    The notification has an "Open Gmail" button.
+
+  NOTIFICATION CLICK HANDLERS:
+    Both onButtonClicked and onClicked call reminderUrl() on the reminder.
+    reminderUrl() uses the same priority logic as contentReminderUrl().
+
+auth.js — Auth Helper (Content Script)
+────────────────────────────────────────
+Loaded before content.js in all Gmail tabs (per manifest content_scripts order).
+Provides: getSession(), saveSession(), clearSession(), getAccessToken(),
+refreshAccessToken(), signInWithGoogle(), signOut().
+
+  TOKEN REFRESH:
+    getAccessToken() checks session.expires_at against current time (with 60s buffer).
+    If expired, calls refreshAccessToken() which POSTs to Supabase's token endpoint
+    with the refresh_token. On success, the new session is saved to storage.
+
+  SIGN IN FLOW:
+    signInWithGoogle() sends SIGN_IN to background.js (because chrome.identity.
+    launchWebAuthFlow must run in a background context, not a content script).
+    Background runs the full flow: builds Supabase OAuth URL → launches web auth
+    flow → user approves in popup → callback URL contains tokens → parsed and stored.
+
+popup.js — Toolbar Popup
+────────────────────────
+Loaded when the user clicks the extension icon in Chrome's toolbar.
+Has its own reminderUrl() implementation (same logic as content.js and background.js).
+Displays active reminders in a compact list. Each reminder row is clickable
+(navigates to thread) and has an Open button and Dismiss button.
+Also has the Email Analyzer form for analyzing email text directly.
+
+--------------------------------------------------------------------------------
+3. BACKEND SERVER (server/index.js)
+--------------------------------------------------------------------------------
+
+Express.js server running on Node.js. Rate-limited to 100 requests per 15 minutes
+per endpoint. All protected endpoints use requireAuth middleware.
+
+requireAuth (server/middleware/auth.js):
+  Reads Authorization header (Bearer <supabase_jwt>). Calls Supabase's
+  /auth/v1/user endpoint to validate the JWT and extract the user's UUID.
+  Attaches req.userId for use in route handlers.
+
+POST /analyze-email:
+  Takes {email, context}. Calls OpenRouter API with google/gemini-2.0-flash-001.
+  Returns structured feedback: Grammar, Tone, Clarity, Suggestions sections.
+
+POST /draft-email:
+  Takes {context, resume_context}. Generates a full personalized email draft.
+  If user has uploaded a resume, its extracted text is injected as context
+  so the AI can reference real experience/skills from the resume.
+
+POST /scrape-emails:
+  Takes {prompt} like "UF research professors".
+  Three-layer caching:
+    Layer 1 (prompt_cache): If exact normalized prompt was searched in last 3 days,
+                            return cached results immediately.
+    Layer 2 (email_leads):  If we have 10+ leads for the inferred domain,
+                            return those immediately.
+    Layer 3 (live):         Firecrawl Search API finds relevant URLs for the prompt.
+                            Firecrawl Scraper extracts contact info from each URL.
+                            Results upserted to email_leads and prompt_cache tables.
+  normalizePrompt() lowercases and detects university domains (e.g. "UF" → "ufl.edu")
+  for domain-specific caching.
+
+POST /gmail/sync:
+  Takes {provider_token, provider_refresh_token} (Google OAuth token from session).
+  Calls fetchMessageIds() to get recent Gmail message IDs (supports incremental sync
+  via Gmail historyId to avoid re-fetching all messages every time).
+  For each message, calls fetchMessage() to get full email content.
+  extractBodyText() decodes base64 MIME parts and strips HTML.
+  cleanBodyText() removes quoted reply text, email signatures, and boilerplate.
+  upsertMessage() stores cleaned message in gmail_messages table.
+  Then creates an indexing_job record so the background worker can embed it.
+  Returns {synced, skipped, errors} counts.
+
+POST /search:
+  Takes {query, filters: {from, after, before}}.
+  embedQuery() calls OpenAI text-embedding-3-small to convert the natural language
+  query to a 1536-dimensional vector.
+  vectorSearch() calls Supabase RPC function search_email_vectors() which uses
+  pgvector's cosine similarity to find the nearest embedding vectors.
+  groupAndRankResults() groups by message (a message can have multiple chunks),
+  boosts "summary" chunk type scores by 1.5x, returns top 10 messages.
+
+POST /user/resume (GET and POST):
+  Stores the user's resume text in the users table.
+  On upload: multer reads the PDF buffer, pdf2json extracts plain text,
+  text is summarized by AI and stored alongside the raw text.
+  On GET: returns the summary for display in the sidebar.
+
+--------------------------------------------------------------------------------
+4. BACKGROUND INDEXING WORKER (server/workers/indexer.js)
+--------------------------------------------------------------------------------
+
+Runs as a separate Node.js process (npm run worker). Polls the indexing_jobs table
+every few seconds for pending jobs. For each job:
+1. Reads the gmail_messages row for that message_id
+2. Generates an AI summary of the email body using Gemini
+3. Chunks the body text into overlapping segments
+4. Calls OpenAI text-embedding-3-small on each chunk + the summary
+5. Upserts vectors to gmail_message_vectors table (chunk_type: "summary" or "chunk")
+6. Marks the indexing_job as done
+
+This separation keeps the /gmail/sync endpoint fast (no blocking on embedding)
+and lets the worker retry failed jobs independently.
+
+--------------------------------------------------------------------------------
+5. DATABASE SCHEMA (Supabase / PostgreSQL + pgvector)
+--------------------------------------------------------------------------------
+
+users
+  id UUID (references auth.users), gmail_tokens JSONB, resume_text TEXT,
+  resume_summary TEXT, updated_at TIMESTAMP
+
+gmail_messages
+  id UUID, user_id UUID, gmail_message_id TEXT, thread_id TEXT,
+  subject TEXT, from_name TEXT, from_email TEXT, snippet TEXT,
+  body_text TEXT, body_hash TEXT (SHA-256 for dedup), labels TEXT[],
+  internal_date BIGINT (Unix ms from Gmail), received_at TIMESTAMP,
+  UNIQUE(user_id, gmail_message_id)
+
+gmail_message_vectors
+  id UUID, user_id UUID, gmail_message_id TEXT, thread_id TEXT,
+  subject TEXT, from_name TEXT, from_email TEXT, labels TEXT[],
+  internal_date BIGINT, chunk_text TEXT, chunk_type TEXT (summary|chunk),
+  embedding vector(1536), created_at TIMESTAMP
+
+indexing_jobs
+  id UUID, user_id UUID, gmail_message_id TEXT,
+  status TEXT (pending|processing|done|error), created_at TIMESTAMP
+
+scraped_pages
+  url TEXT (PK), content JSONB, scraped_at TIMESTAMP
+
+email_leads
+  email TEXT (PK), name TEXT, institution TEXT, role TEXT,
+  source_url TEXT, domain TEXT, created_at TIMESTAMP
+
+prompt_cache
+  cache_key TEXT (PK, SHA-256 hash), prompt TEXT, domain TEXT,
+  results JSONB, created_at TIMESTAMP
+
+The search_email_vectors RPC function runs:
+  SELECT ... FROM gmail_message_vectors
+  WHERE user_id = p_user_id
+    AND (p_from_email IS NULL OR from_email = p_from_email)
+    AND (p_after IS NULL OR internal_date > p_after)
+    AND (p_before IS NULL OR internal_date < p_before)
+  ORDER BY embedding <=> p_query_vector  -- cosine distance (pgvector operator)
+  LIMIT p_match_count;
+
+--------------------------------------------------------------------------------
+6. AUTHENTICATION FLOW (end to end)
+--------------------------------------------------------------------------------
+
+1. User clicks "Sign in with Google" in the sidebar.
+2. content.js calls signInWithGoogle() from auth.js.
+3. auth.js sends { type: "SIGN_IN" } to background.js (required because
+   chrome.identity only works in background/service worker context).
+4. background.js builds Supabase OAuth URL:
+   https://supabase.co/auth/v1/authorize?provider=google&redirect_to=...
+   Scopes include gmail.readonly so the token can access Gmail API.
+5. chrome.identity.launchWebAuthFlow opens a popup → user approves Google login.
+6. Callback URL contains access_token, refresh_token, provider_token (Google OAuth),
+   provider_refresh_token, expires_in.
+7. Background fetches user info from Supabase /auth/v1/user.
+8. Full session object saved to chrome.storage.local['wm_supabase_session'].
+9. Background sends session back to auth.js → resolves the Promise → content.js
+   calls refreshSidebarAuth() → sidebar unlocks all features.
+
+TOKEN TYPES:
+  access_token (Supabase JWT):
+    Used in Authorization: Bearer headers for all server API calls.
+    Validated by requireAuth middleware via Supabase /auth/v1/user.
+    Expires in ~1 hour. Refreshed automatically by getAccessToken() in auth.js.
+
+  provider_token (Google OAuth token):
+    Used by background.js to call Gmail API directly (thread reply checking).
+    Used by the server's /gmail/sync endpoint to fetch Gmail messages.
+    Short-lived (~1 hour). NOT automatically refreshed in the current implementation.
+
+SECURITY RULES:
+  - Tokens never stored in localStorage or sent to the frontend
+  - Google OAuth tokens only exist in chrome.storage.local (encrypted by Chrome)
+  - All server endpoints validate Supabase JWT before accessing any user data
+  - Row-Level Security in Supabase ensures users can only read their own data
+
+--------------------------------------------------------------------------------
+7. FOLLOW-UP REMINDERS — COMPLETE DATA FLOW
+--------------------------------------------------------------------------------
+
+CREATING A REMINDER:
+1. User sends email. Send button click handler fires in content.js.
+2. getCurrentThreadPath() reads window.location.hash and strips ?compose=new.
+   For new emails: returns null (thread doesn't exist yet).
+   For replies: returns "sent/CwCPbpQH..." (from URL at send time).
+3. watchForSentThread() starts a MutationObserver watching for "View message" link.
+   Gmail adds this link ~1-2 seconds after a new email is sent successfully.
+   When found, pendingThread.path and pendingThread.id are updated.
+4. 600ms after send, showReminderPrompt() toast appears.
+   pendingThread is passed by reference, so if the observer fires before the user
+   picks a time, the correct thread path is available at click time.
+5. User picks "1 Day" → scheduleReminder() fires:
+   chrome.runtime.sendMessage({ type: "SET_REMINDER", id, subject, dueTime,
+     threadId: pendingThread.id, threadPath: pendingThread.path, createdAt })
+6. background.js stores reminder in wm_reminders array in storage.
+7. chrome.alarms.create(id, { when: dueTime }) schedules the notification.
+
+FIRING A NOTIFICATION:
+1. At dueTime, chrome.alarms.onAlarm fires in background.js.
+2. Reminder is marked fired: true in storage.
+3. chrome.notifications.create shows OS desktop notification.
+4. storage.onChanged fires → content.js re-renders sidebar → reminder shows red/urgent.
+
+CLICKING A NOTIFICATION:
+1. User clicks notification or "Open Gmail" button.
+2. background.js reminderUrl() builds the correct Gmail URL:
+   - Has threadPath → use it directly (e.g. #sent/CwCPbpQH...)
+   - Has valid threadId → use #inbox/threadId
+   - Has subject only → build search URL with proper encoding:
+     encodeURIComponent('subject:"My Email" in:sent').replace(/%20/g, '+')
+3. chrome.tabs.create({ url }) opens Gmail at the specific thread or search.
+
+AUTO-DISMISSAL WHEN REPLY ARRIVES:
+1. User opens Gmail, navigates to any thread (URL hash changes).
+2. hashchange listener in content.js calls checkReplyForThread(threadId).
+3. Checks storage: is there a reminder for this thread?
+4. If yes: gets session.provider_token and sends CHECK_REPLY_FOR_THREAD to background.
+5. background.js calls:
+   GET https://gmail.googleapis.com/gmail/v1/users/me/threads/{threadId}?format=metadata
+   with Authorization: Bearer {provider_token}
+6. Checks if any message.internalDate > reminder.createdAt.
+   (The original sent email has internalDate ≈ createdAt, so only replies are newer.)
+7. If reply found: removes reminder from storage, clears alarm.
+8. storage.onChanged fires → sidebar re-renders → reminder disappears.
+
+AUTO-DISMISS WHEN USER REPLIES:
+  When user sends a message (Send button click), autoDismissReminderForThread()
+  is called with the current thread ID. It matches reminders by BOTH:
+    r.threadId === threadId   (if threadId was captured)
+    r.threadPath.endsWith('/' + threadId)  (if only threadPath was captured)
+  Matching reminders are removed from storage and their alarms cleared.
+
+--------------------------------------------------------------------------------
+8. SEMANTIC SEARCH — COMPLETE DATA FLOW
+--------------------------------------------------------------------------------
+
+INDEXING (one-time + incremental):
+1. User clicks "Sync" in the Search panel of the sidebar.
+2. content.js sends provider_token to POST /gmail/sync (via apiFetch proxy).
+3. Server calls fetchMessageIds() → Gmail messages.list API → gets up to 100 IDs.
+   If a previous historyId is stored, uses Gmail history API for incremental sync.
+4. For each message ID, fetchMessage() calls Gmail messages.get API.
+5. Body MIME parts are decoded from base64 (supporting text/plain and text/html).
+6. cleanBodyText() strips: quoted replies (lines starting with >), "On X wrote:"
+   headers, email signatures (everything after -- or ___), and boilerplate.
+7. SHA-256 hash of body text prevents re-indexing identical messages.
+8. upsertMessage() writes to gmail_messages table.
+9. A record is inserted into indexing_jobs (status: pending).
+10. Background worker (separate process) picks up the job:
+    a. Generates AI summary of the email body (Gemini flash)
+    b. Splits body into 512-char chunks with 50-char overlap
+    c. Embeds summary + each chunk with OpenAI text-embedding-3-small (1536 dims)
+    d. Inserts vectors into gmail_message_vectors via Supabase upsert
+    e. Marks job done
+
+SEARCHING:
+1. User types "email from Nathan about club opportunity" and clicks Search.
+2. POST /search called with {query, filters}.
+3. embedQuery() converts query text → 1536-dimensional float vector via OpenAI.
+4. vectorSearch() calls Supabase RPC search_email_vectors():
+   - Uses pgvector <=> operator (cosine distance) to find nearest 20 vectors
+   - Applies optional filters: from_email, after date, before date
+5. groupAndRankResults() de-duplicates by message:
+   - Groups all matching chunks by gmail_message_id
+   - Boosts summary-type chunks by 1.5x (summaries tend to be better representatives)
+   - Picks the highest-scoring chunk as the snippet for each message
+   - Returns top 10 messages sorted by score
+6. Results rendered in sidebar as cards with subject, sender, date, score, snippet.
+
+--------------------------------------------------------------------------------
+9. WEB SCRAPER / LEAD FINDER — COMPLETE DATA FLOW
+--------------------------------------------------------------------------------
+
+1. User types "UF Computer Science professors" and clicks Find Leads.
+2. POST /scrape-emails called with {prompt}.
+3. normalizePrompt() lowercases, trims, and infers domain ("UF" → "ufl.edu").
+4. generateCacheKey() creates SHA-256 hash of "ufl.edu::uf computer science professors".
+
+   CACHE CHECK 1: prompt_cache table
+   → If found (< 3 days old): return cached results immediately. Done.
+
+   CACHE CHECK 2: email_leads table
+   → If 10+ leads with domain "ufl.edu" exist: return those. Done.
+
+   LIVE PIPELINE:
+   a. searchWithFirecrawl(): Firecrawl's /search endpoint finds top URLs for the prompt.
+      Returns ~5-10 relevant URLs (e.g. CS department faculty page).
+   b. scrapeEmails(): For each URL, Firecrawl /scrape extracts the page content.
+      AI model parses the structured content to extract {name, email, institution}.
+   c. upsertResults(): Saves leads to email_leads table, saves result to prompt_cache.
+
+5. Results rendered as table: Name | Email | Institution | Copy | Compose
+
+--------------------------------------------------------------------------------
+10. KEY TECHNICAL PATTERNS
+--------------------------------------------------------------------------------
+
+WHY CONTENT SCRIPTS CAN'T ACCESS SOME CHROME APIs:
+  Content scripts run in a sandboxed context within a web page. They have access
+  to a subset of Chrome extension APIs:
+    ✓ chrome.runtime (messaging, lastError)
+    ✓ chrome.storage (read/write local storage)
+    ✗ chrome.tabs.create (requires background/popup context)
+    ✗ chrome.alarms (requires background context)
+    ✗ chrome.notifications (requires background context)
+    ✗ chrome.identity (requires background context)
+  All restricted APIs are proxied through background.js via chrome.runtime.sendMessage.
+  The message handler returns true to keep the channel open for async responses.
+
+WHY API_FETCH PROXY IS NEEDED:
+  content.js is injected into an HTTPS Gmail page. Direct fetch() to localhost:3000
+  (HTTP) is blocked as mixed content. Even for HTTPS APIs, CORS headers may reject
+  requests from the gmail.com origin. Background service workers bypass both issues.
+
+THE pendingThread MUTABLE OBJECT PATTERN:
+  When a new email is sent, the Gmail thread ID doesn't exist in the URL yet.
+  watchForSentThread() runs asynchronously and updates pendingThread.id and
+  pendingThread.path when it finds the "View message" DOM link.
+  The reminder option buttons read pendingThread.id/path at click time (not at
+  toast creation time), so if the observer fires between toast appearing and
+  button click, the correct thread info is captured.
+
+GMAIL URL FORMAT:
+  Gmail uses the URL hash fragment (#) for navigation, not the path.
+  Thread URLs: #inbox/THREADID, #sent/THREADID, #label/NAME/THREADID
+  Search URLs: #search/QUERY (query must be encoded with encodeURIComponent + %20→+)
+  The THREADID in URLs is base62-like (e.g. CwCPbpQHJcjrSFlVPxcprfrKKSQmqXb)
+  and is DIFFERENT from Gmail's internal DOM thread-f:NUMBER format.
+  Only URL-format IDs can be used for navigation.
+
+STORAGE CHANGE DRIVEN UI:
+  The sidebar never polls storage. Instead, chrome.storage.onChanged listeners
+  re-render the relevant UI section whenever data changes. This means:
+  - Reminder added → sidebar updates immediately
+  - Reminder dismissed from background → sidebar updates immediately
+  - Session changes → sidebar auth state updates immediately
+  Multiple contexts (content script, background, popup) can all trigger UI updates
+  in other contexts through this single pattern.
+
+INCREMENTAL GMAIL SYNC:
+  Gmail's history API allows syncing only messages added since a known historyId.
+  The server stores the last historyId per user. On subsequent syncs, only new
+  messages are fetched and indexed. Falls back to full sync if historyId expires.
+
+--------------------------------------------------------------------------------
+11. SECURITY MODEL
+--------------------------------------------------------------------------------
+
+• API keys (OpenAI, Firecrawl, Gemini) are only on the server in .env files.
+  They are never sent to the browser or stored in the extension.
+
+• The Supabase service role key (bypasses Row Level Security) is only used
+  server-side for upsert operations. The client-facing extension only uses the
+  anon key with user JWTs.
+
+• Google OAuth tokens (provider_token) live in chrome.storage.local, which is
+  encrypted by Chrome and sandboxed to the extension. They are never exposed
+  in API responses or sent anywhere except Google's and the user's own server.
+
+• All backend endpoints check req.userId (from Supabase JWT validation) and only
+  return/modify data belonging to that user. Supabase Row Level Security provides
+  a second layer of enforcement at the database level.
+
+• The Supabase anon key is embedded in the extension config. This is intentional —
+  it is designed to be public and only allows operations that pass RLS policies.
+
+================================================================================
