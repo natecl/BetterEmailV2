@@ -113,8 +113,8 @@ function wireAnalyzer(sidebar) {
                 const editor = findAnyVisibleEditor();
                 if (editor) {
                     editor.focus();
-                    editor.textContent = draft;
-                    editor.dispatchEvent(new InputEvent('input', { bubbles: true }));
+                    document.execCommand('selectAll');
+                    document.execCommand('insertText', false, draft);
                 }
                 resultsArea.innerHTML = '';
             } else {

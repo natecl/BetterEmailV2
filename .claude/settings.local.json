@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm test -- --testPathPattern=draftPersonalized --forceExit)"
+      "Bash(npm test -- --testPathPattern=draftPersonalized --forceExit)",
+      "Bash(ls:*)"
     ]
   }
 }

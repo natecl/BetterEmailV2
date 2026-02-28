@@ -1,0 +1,197 @@
+/* Wingman V2 - Follow-up reminder toast */
+
+/* =========================================================
+   FOLLOW-UP REMINDER TOAST (stays -- appears after sending)
+========================================================= */
+
+.wm-reminder-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 374px;
+    z-index: 999999;
+    width: 300px;
+    background: #0a0b10;
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(142, 125, 255, 0.2);
+    border: 1px solid rgba(142, 125, 255, 0.18);
+    font-family: 'Inter', 'Google Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+    transition: opacity 0.28s ease, transform 0.28s ease;
+    pointer-events: none;
+    color: var(--wm-text);
+}
+
+.wm-reminder-toast.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.wm-reminder-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px 8px;
+}
+
+.wm-reminder-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--wm-primary);
+}
+
+.wm-reminder-title svg {
+    flex-shrink: 0;
+    stroke: var(--wm-primary);
+}
+
+.wm-reminder-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--wm-text-dim);
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.wm-reminder-close:hover {
+    color: var(--wm-text);
+    background: rgba(255, 255, 255, 0.08);
+    transform: none;
+}
+
+.wm-reminder-body {
+    padding: 0 14px 12px;
+    font-size: 13px;
+    color: var(--wm-text-dim);
+    line-height: 1.5;
+}
+
+.wm-reminder-body strong {
+    color: var(--wm-text);
+    font-weight: 500;
+}
+
+.wm-reminder-options {
+    display: flex;
+    gap: 6px;
+    padding: 10px 14px 14px;
+    border-top: 1px solid var(--wm-border);
+    flex-wrap: wrap;
+}
+
+.wm-reminder-btn {
+    flex: 1;
+    min-width: 56px;
+    padding: 7px 10px;
+    border: 1px solid var(--wm-border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--wm-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.wm-reminder-btn:hover {
+    background: rgba(142, 125, 255, 0.15);
+    border-color: var(--wm-primary);
+    transform: none;
+}
+
+.wm-reminder-skip {
+    color: var(--wm-text-dim);
+    border-color: transparent;
+}
+
+.wm-reminder-skip:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--wm-border);
+    color: var(--wm-text);
+}
+
+.wm-reminder-custom {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    width: 100%;
+}
+
+.wm-custom-num {
+    width: 60px;
+    padding: 7px 8px;
+    border: 1px solid var(--wm-border);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--wm-text);
+    background: rgba(255, 255, 255, 0.05);
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.wm-custom-num::-webkit-outer-spin-button,
+.wm-custom-num::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.wm-custom-num:focus {
+    border-color: var(--wm-primary);
+    box-shadow: 0 0 0 2px rgba(142, 125, 255, 0.2);
+}
+
+.wm-custom-num.wm-custom-num-error {
+    border-color: #ff6b6b;
+    box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.2);
+}
+
+.wm-custom-unit {
+    flex: 1;
+    padding: 7px 6px;
+    border: 1px solid var(--wm-border);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--wm-text);
+    background: rgba(255, 255, 255, 0.05);
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+
+.wm-custom-unit:focus {
+    border-color: var(--wm-primary);
+}
+
+.wm-custom-back {
+    width: 100%;
+    margin-top: 4px;
+}
+
+.wm-reminder-confirm {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 18px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #4caf50;
+}
+
+.wm-reminder-confirm svg {
+    flex-shrink: 0;
+    stroke: #4caf50;
+}

@@ -1,0 +1,70 @@
+/* Wingman V2 - Sidebar auth card + locked UI */
+
+/* =========================================================
+   SIDEBAR AUTH CARD
+========================================================= */
+
+.wm-sidebar-auth-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2.5rem 1.5rem;
+    flex: 1;
+    animation: wm-fadeIn 0.3s ease;
+}
+
+.wm-sidebar-auth-inner {
+    text-align: center;
+}
+
+.wm-sidebar-auth-inner h2 {
+    font-family: 'Outfit', 'Google Sans', sans-serif;
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+    color: var(--wm-text);
+}
+
+.wm-sidebar-auth-inner p {
+    font-size: 0.82rem;
+    color: var(--wm-text-dim);
+    margin-bottom: 1.2rem;
+}
+
+.wm-sidebar-auth-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--wm-border);
+    color: var(--wm-text);
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-weight: 500;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: auto;
+}
+
+.wm-sidebar-auth-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: none;
+}
+
+/* =========================================================
+   SIDEBAR: LOCKED UI
+========================================================= */
+
+.wm-sidebar-locked {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px 16px;
+    color: var(--wm-text-dim);
+    font-size: 0.82rem;
+    line-height: 1.5;
+    font-style: italic;
+}

@@ -1,0 +1,325 @@
+/* Wingman V2 - Sidebar compose analyzer + results cards + loading/error/spinner */
+
+/* =========================================================
+   SIDEBAR: COMPOSE ANALYZER SECTION
+========================================================= */
+
+.wm-sidebar-compose-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.wm-sidebar-section-title {
+    font-family: 'Outfit', 'Google Sans', sans-serif;
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: var(--wm-primary);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 0.25rem;
+}
+
+.wm-sidebar-section-title svg {
+    stroke: var(--wm-primary);
+    flex-shrink: 0;
+}
+
+.wm-sidebar-context-input,
+.wm-sidebar-textarea {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--wm-border);
+    border-radius: 10px;
+    color: var(--wm-text);
+    padding: 10px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    box-sizing: border-box;
+}
+
+.wm-sidebar-textarea {
+    min-height: 80px;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.wm-sidebar-context-input:focus,
+.wm-sidebar-textarea:focus {
+    border-color: var(--wm-primary);
+    box-shadow: 0 0 0 2px rgba(142, 125, 255, 0.2);
+}
+
+.wm-sidebar-context-input::placeholder,
+.wm-sidebar-textarea::placeholder {
+    color: var(--wm-text-dim);
+}
+
+.wm-sidebar-compose-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.wm-sidebar-analyze-btn,
+.wm-sidebar-draft-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 12px;
+    border: none;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.wm-sidebar-analyze-btn {
+    background: var(--wm-primary);
+    color: white;
+}
+
+.wm-sidebar-analyze-btn:hover {
+    background: var(--wm-primary-dark);
+    transform: translateY(-1px);
+}
+
+.wm-sidebar-draft-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--wm-border);
+    color: var(--wm-text);
+}
+
+.wm-sidebar-draft-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+}
+
+.wm-sidebar-analyze-btn:disabled,
+.wm-sidebar-draft-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.wm-sidebar-compose-hint {
+    font-size: 0.72rem;
+    color: var(--wm-text-dim);
+    font-style: italic;
+    text-align: center;
+}
+
+.wm-sidebar-results-area {
+    margin-top: 0.5rem;
+}
+
+/* =========================================================
+   SIDEBAR: RESULTS CARDS (analysis results)
+========================================================= */
+
+.wm-sidebar-results-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.wm-sidebar-result-card {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--wm-border);
+    animation: wm-cardSlideIn 0.4s ease both;
+    transition: all 0.2s ease;
+}
+
+.wm-sidebar-result-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.wm-sidebar-result-card.accent-blue {
+    border-left: 3px solid #4285f4;
+}
+
+.wm-sidebar-result-card.accent-purple {
+    border-left: 3px solid #a142f4;
+}
+
+.wm-sidebar-result-card.accent-cyan {
+    border-left: 3px solid #12b5cb;
+}
+
+.wm-sidebar-result-card.accent-yellow {
+    border-left: 3px solid #f9ab00;
+}
+
+.wm-sidebar-result-card.accent-green {
+    border-left: 3px solid #34a853;
+}
+
+.wm-sidebar-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.wm-sidebar-card-icon {
+    font-size: 14px;
+    line-height: 1;
+}
+
+.wm-sidebar-card-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--wm-primary);
+}
+
+.wm-sidebar-result-card.accent-blue .wm-sidebar-card-title {
+    color: #8ab4f8;
+}
+
+.wm-sidebar-result-card.accent-purple .wm-sidebar-card-title {
+    color: #c084fc;
+}
+
+.wm-sidebar-result-card.accent-cyan .wm-sidebar-card-title {
+    color: #12b5cb;
+}
+
+.wm-sidebar-result-card.accent-yellow .wm-sidebar-card-title {
+    color: #f9ab00;
+}
+
+.wm-sidebar-result-card.accent-green .wm-sidebar-card-title {
+    color: #34a853;
+}
+
+.wm-sidebar-card-content {
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--wm-text-dim);
+}
+
+.wm-sidebar-close-results {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    margin-top: 10px;
+    padding: 8px;
+    background: transparent;
+    border: 1px solid var(--wm-border);
+    border-radius: 8px;
+    color: var(--wm-text-dim);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.wm-sidebar-close-results:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: none;
+}
+
+.wm-sidebar-raw-result {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 10px;
+    padding: 12px;
+    border: 1px solid var(--wm-border);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--wm-text-dim);
+    white-space: pre-wrap;
+}
+
+/* =========================================================
+   SIDEBAR: LOADING / ERROR / SPINNER
+========================================================= */
+
+.wm-sidebar-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px;
+    color: var(--wm-text-dim);
+    font-size: 0.82rem;
+}
+
+.wm-sidebar-loading-dots {
+    display: flex;
+    gap: 4px;
+}
+
+.wm-sidebar-dot {
+    width: 7px;
+    height: 7px;
+    background: var(--wm-primary);
+    border-radius: 50%;
+    animation: wm-bounce 1.4s ease-in-out infinite both;
+}
+
+.wm-sidebar-dot:nth-child(1) {
+    animation-delay: -0.32s;
+}
+
+.wm-sidebar-dot:nth-child(2) {
+    animation-delay: -0.16s;
+}
+
+.wm-sidebar-dot:nth-child(3) {
+    animation-delay: 0s;
+}
+
+@keyframes wm-bounce {
+
+    0%,
+    80%,
+    100% {
+        transform: scale(0.4);
+        opacity: 0.4;
+    }
+
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.wm-sidebar-error {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(255, 107, 107, 0.08);
+    border: 1px solid rgba(255, 107, 107, 0.2);
+    border-radius: 8px;
+    color: #ff6b6b;
+    font-size: 0.8rem;
+}
+
+.wm-sidebar-error svg {
+    flex-shrink: 0;
+}
+
+.wm-sidebar-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: wm-spin 0.8s linear infinite;
+}
+
+@keyframes wm-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

@@ -1,0 +1,15 @@
+/* Wingman V2 - CSS Variables (shared palette) */
+
+/* =========================================================
+   CSS VARIABLES (shared palette)
+========================================================= */
+
+:root {
+    --wm-primary: #8e7dff;
+    --wm-primary-dark: #7c69ff;
+    --wm-bg: #0a0b10;
+    --wm-card-bg: rgba(255, 255, 255, 0.05);
+    --wm-text: #ffffff;
+    --wm-text-dim: #a0a0b0;
+    --wm-border: rgba(255, 255, 255, 0.1);
+}

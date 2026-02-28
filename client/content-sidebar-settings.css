@@ -1,0 +1,174 @@
+/* Wingman V2 - Sidebar settings section */
+
+/* =========================================================
+   SIDEBAR: SETTINGS SECTION
+========================================================= */
+
+.wm-sidebar-settings-title {
+    font-family: 'Outfit', 'Google Sans', sans-serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--wm-primary);
+    margin: 0 0 0.5rem 0;
+}
+
+.wm-sidebar-settings-desc {
+    font-size: 0.8rem;
+    color: var(--wm-text-dim);
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+}
+
+.wm-sidebar-upload-zone {
+    border: 2px dashed var(--wm-border);
+    border-radius: 10px;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+}
+
+.wm-sidebar-upload-zone:hover,
+.wm-sidebar-upload-drag {
+    border-color: var(--wm-primary);
+    background: rgba(142, 125, 255, 0.06);
+}
+
+.wm-sidebar-upload-icon {
+    font-size: 1.8rem;
+}
+
+.wm-sidebar-upload-text {
+    font-size: 0.85rem;
+    color: var(--wm-text);
+}
+
+.wm-sidebar-upload-link {
+    color: var(--wm-primary);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.wm-sidebar-upload-hint {
+    font-size: 0.75rem;
+    color: var(--wm-text-dim);
+}
+
+.wm-sidebar-file-chosen {
+    display: none;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(142, 125, 255, 0.08);
+    border: 1px solid var(--wm-primary);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
+}
+
+.wm-sidebar-file-icon {
+    font-size: 1rem;
+}
+
+.wm-sidebar-file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--wm-text);
+}
+
+.wm-sidebar-file-remove {
+    background: none;
+    border: none;
+    color: var(--wm-text-dim);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 0 2px;
+}
+
+.wm-sidebar-file-remove:hover {
+    color: #ff6b6b;
+    transform: none;
+}
+
+.wm-sidebar-resume-on-file {
+    font-size: 0.8rem;
+    color: #4caf50;
+    padding: 4px 0;
+    display: none;
+    margin-bottom: 0.5rem;
+}
+
+.wm-sidebar-resume-save {
+    width: 100%;
+    background: var(--wm-primary);
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 0.5rem;
+}
+
+.wm-sidebar-resume-save:hover {
+    background: var(--wm-primary-dark);
+    transform: translateY(-1px);
+}
+
+.wm-sidebar-resume-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.wm-sidebar-resume-status {
+    font-size: 0.8rem;
+    text-align: center;
+    min-height: 1.2em;
+    color: var(--wm-text-dim);
+}
+
+.wm-sidebar-resume-status.wm-status-ok {
+    color: #4caf50;
+}
+
+.wm-sidebar-resume-status.wm-status-err {
+    color: #ff6b6b;
+}
+
+.wm-sidebar-resume-summary {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--wm-border);
+    border-radius: 10px;
+    padding: 0.75rem;
+    display: none;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.wm-sidebar-summary-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--wm-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.wm-sidebar-summary-text {
+    font-size: 0.8rem;
+    color: var(--wm-text);
+    line-height: 1.55;
+    white-space: pre-wrap;
+    max-height: 180px;
+    overflow-y: auto;
+}

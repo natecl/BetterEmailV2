@@ -1,0 +1,101 @@
+/* Wingman V2 - Gmail layout shift + sidebar fixes for compose/search */
+
+/* =========================================================
+   GMAIL LAYOUT SHIFT
+========================================================= */
+
+html.wm-sidebar-active,
+body.wm-sidebar-active {
+    /* Do NOT reduce width so Gmail still thinks it's on a large desktop screen.
+       Use padding-right so block-level content natively wraps before the sidebar. */
+    width: 100% !important;
+    max-width: 100vw !important;
+    padding-right: 350px !important;
+    margin-right: 0 !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+}
+
+body.wm-sidebar-active {
+    transition: width 0.3s ease, max-width 0.3s ease, padding-right 0.3s ease;
+}
+
+/* Force Gmail inner app wrappers to squeeze instead of sliding under */
+/* In standard Gmail, .UI or div > .nH are the major structural flex boxes */
+body.wm-sidebar-active>div.UI,
+body.wm-sidebar-active>div:first-child,
+body.wm-sidebar-active .nH.bkK {
+    box-sizing: border-box !important;
+    padding-right: 350px !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+}
+
+/* Push any fixed absolutely positioned UI panes inside Gmail that are pinned right */
+body.wm-sidebar-active .aeF,
+body.wm-sidebar-active .aKs,
+body.wm-sidebar-active .TO {
+    box-sizing: border-box !important;
+}
+
+/* =========================================================
+   GMAIL UI SIDEBAR FIXES (Search & Compose Window)
+========================================================= */
+
+/* Fix Gmail top header/search bar when sidebar is active */
+/*Header is usually fixed to top, width: 100%. If we add padding-right, it compresses the flex
+   space without triggering JS window-width breakpoints that hide the search input.
+   We explicitly target just the outer wrapper so nested elements don't get double-padded. */
+body.wm-sidebar-active header#gb {
+    padding-right: 350px !important;
+    box-sizing: border-box !important;
+    right: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+}
+
+/* Ensure the central search box flex container tries to use as much space as possible */
+body.wm-sidebar-active header#gb [role="search"] {
+    flex: 1 1 auto !important;
+}
+
+/*
+   COMPOSE WINDOW LAYOUT:
+   Shift the parent wrappers (.no, .dw) to the left to clear the sidebar.
+   We apply margin-right to the dock wrappers so they universally shift natively
+   without breaking internal Gmail math for minimizing or side-by-side positioning.
+*/
+
+/* 1. We rely entirely on JS MutationObserver offsets to position compose dialogs */
+
+/* 2. Position the compose windows handled by JS (observeComposeWindows) */
+
+
+/* 3. Focus Glow Animation for the active Compose Window */
+body.wm-sidebar-active div.nH.Hd[role="dialog"].wm-compose-active {
+    box-shadow: 0 0 0 3px rgba(142, 125, 255, 0.4), 0 8px 24px rgba(0, 0, 0, 0.2) !important;
+    border: 1px solid var(--wm-primary) !important;
+    z-index: 100 !important;
+    /* Ensure the glowing window stays on top of other drafts */
+}
+
+/* Animate the glow slightly */
+@keyframes composeGlowPulse {
+    0% {
+        box-shadow: 0 0 0 2px rgba(142, 125, 255, 0.4), 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    50% {
+        box-shadow: 0 0 0 4px rgba(142, 125, 255, 0.6), 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    100% {
+        box-shadow: 0 0 0 2px rgba(142, 125, 255, 0.4), 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+}
+
+
+
+body.wm-sidebar-active div.nH.Hd[role="dialog"].wm-compose-active {
+    animation: composeGlowPulse 2.5s infinite;
+}
