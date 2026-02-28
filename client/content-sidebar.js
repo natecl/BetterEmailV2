@@ -1,0 +1,340 @@
+/**
+ * Wingman V2 — Sidebar Injection, HTML, Events & Auth State
+ */
+
+
+/* =========================================================
+   SIDEBAR INJECTION
+========================================================= */
+
+function injectSidebar() {
+    if (document.getElementById('wm-sidebar-wrapper')) return;
+
+    // Create sidebar wrapper
+    const sidebar = document.createElement('div');
+    sidebar.id = 'wm-sidebar-wrapper';
+    sidebar.innerHTML = buildSidebarHTML();
+    document.body.appendChild(sidebar);
+
+    // Create toggle button (for collapsed state)
+    const toggle = document.createElement('button');
+    toggle.id = 'wm-sidebar-toggle';
+    toggle.title = 'Open Wingman';
+    toggle.innerHTML = `
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+        </svg>
+    `;
+    document.body.appendChild(toggle);
+
+    // Shift Gmail layout
+    document.body.classList.add('wm-sidebar-active');
+    document.documentElement.classList.add('wm-sidebar-active');
+
+    // Wire up all sidebar functionality
+    wireSidebarEvents(sidebar, toggle);
+
+    // Initialize auth state
+    refreshSidebarAuth();
+
+    // Initialize semantic search bar (kept as overlay on Gmail search)
+    initSemanticSearchBar();
+
+    console.log("[Wingman] Sidebar injected");
+}
+
+
+/* =========================================================
+   SIDEBAR HTML BUILDER
+========================================================= */
+
+function buildSidebarHTML() {
+    return `
+        <!-- Header -->
+        <div class="wm-sidebar-header">
+            <div class="wm-sidebar-header-left">
+                <div class="wm-sidebar-logo-dot"></div>
+                <h1>Wingman</h1>
+            </div>
+            <div class="wm-sidebar-header-right">
+                <span id="wm-sidebar-user-email" class="wm-sidebar-user-email" style="display:none;"></span>
+                <button id="wm-sidebar-signout" class="wm-sidebar-signout-btn" title="Sign out" style="display:none;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                </button>
+                <button id="wm-sidebar-collapse" class="wm-sidebar-collapse-btn" title="Minimize sidebar">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Auth card (shown when signed out) -->
+        <div id="wm-sidebar-auth-card" class="wm-sidebar-auth-card" style="display:none;">
+            <div class="wm-sidebar-auth-inner">
+                <h2>Sign in to unlock Wingman</h2>
+                <p>Sign in with Google to access all features.</p>
+                <button id="wm-sidebar-signin" class="wm-sidebar-auth-btn">
+                    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                    Sign in with Google
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab navigation (shown when signed in) -->
+        <div class="wm-sidebar-tabs" id="wm-sidebar-tabs" style="display:none;">
+            <button class="wm-sidebar-tab wm-sidebar-tab-active" data-tab="main">Main</button>
+            <button class="wm-sidebar-tab" data-tab="leads">Leads</button>
+            <button class="wm-sidebar-tab" data-tab="search">Search</button>
+            <button class="wm-sidebar-tab" data-tab="settings">Settings</button>
+        </div>
+
+        <!-- Main Panel -->
+        <div class="wm-sidebar-panel wm-sidebar-panel-active" id="wm-sidebar-panel-main">
+            <!-- Reminders -->
+            <div class="wm-sidebar-card">
+                <div class="wm-sidebar-reminders-header">
+                    <div class="wm-sidebar-reminders-title">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                        </svg>
+                        <span>Follow-up Reminders</span>
+                    </div>
+                    <span class="wm-sidebar-reminders-badge" id="wm-sidebar-reminders-badge" style="display:none;">0</span>
+                </div>
+                <div id="wm-sidebar-reminders-list"></div>
+            </div>
+
+            <!-- Compose Analyzer -->
+            <div class="wm-sidebar-card">
+                <div class="wm-sidebar-compose-section">
+                    <div class="wm-sidebar-section-title">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                        </svg>
+                        <span>Email Analyzer</span>
+                    </div>
+                    <input type="text" class="wm-sidebar-context-input" id="wm-sidebar-context"
+                        placeholder="What's this email for? (e.g., job application, follow-up)">
+                    <div class="wm-sidebar-compose-hint">Open a compose window, then click Analyze to review your email.</div>
+                    <div class="wm-sidebar-compose-actions">
+                        <button class="wm-sidebar-analyze-btn" id="wm-sidebar-analyze-btn">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                            Analyze
+                        </button>
+                        <button class="wm-sidebar-draft-btn" id="wm-sidebar-draft-btn">
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                            Draft
+                        </button>
+                    </div>
+                    <div class="wm-sidebar-results-area" id="wm-sidebar-analyzer-results"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lead Finder Panel -->
+        <div class="wm-sidebar-panel" id="wm-sidebar-panel-leads">
+            <div class="wm-sidebar-card">
+                <div class="wm-sidebar-section-title">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <span>Lead Finder</span>
+                </div>
+                <input type="text" class="wm-sidebar-lead-input" id="wm-sidebar-lead-input"
+                    placeholder="e.g. UF Computer Science professors">
+                <button class="wm-sidebar-lead-btn" id="wm-sidebar-lead-btn">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    Find Leads
+                </button>
+                <div class="wm-sidebar-lead-status" id="wm-sidebar-lead-status"></div>
+                <div class="wm-sidebar-lead-results" id="wm-sidebar-lead-results"></div>
+            </div>
+        </div>
+
+        <!-- Semantic Search Panel -->
+        <div class="wm-sidebar-panel" id="wm-sidebar-panel-search">
+            <div class="wm-sidebar-card">
+                <div class="wm-sidebar-section-title">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <span>Semantic Search</span>
+                </div>
+                <input type="text" class="wm-sidebar-search-input" id="wm-sidebar-search-input"
+                    placeholder='e.g. "Email from Nathan about club opportunity"'>
+                <div class="wm-sidebar-search-actions">
+                    <button class="wm-sidebar-search-btn" id="wm-sidebar-search-btn">Search</button>
+                    <button class="wm-sidebar-sync-btn" id="wm-sidebar-sync-btn">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                        </svg>
+                        Sync
+                    </button>
+                </div>
+                <div class="wm-sidebar-sync-status" id="wm-sidebar-sync-status"></div>
+                <div class="wm-sidebar-search-results" id="wm-sidebar-search-results"></div>
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="wm-sidebar-panel" id="wm-sidebar-panel-settings">
+            <div class="wm-sidebar-card">
+                <h3 class="wm-sidebar-settings-title">Your Resume</h3>
+                <div class="wm-sidebar-resume-on-file" id="wm-sidebar-resume-on-file">
+                    Resume on file — upload a new PDF to replace it.
+                </div>
+                <p class="wm-sidebar-settings-desc">Upload your resume as a PDF. Wingman will use it to draft personalized outreach emails directly in Gmail.</p>
+                <div class="wm-sidebar-upload-zone" id="wm-sidebar-upload-zone">
+                    <input type="file" id="wm-sidebar-resume-file" accept=".pdf" style="display:none;">
+                    <div class="wm-sidebar-upload-icon">📄</div>
+                    <div class="wm-sidebar-upload-text">Drop your PDF here or <span class="wm-sidebar-upload-link" id="wm-sidebar-upload-browse">browse</span></div>
+                    <div class="wm-sidebar-upload-hint">Max 5 MB · text-based PDFs only</div>
+                </div>
+                <div class="wm-sidebar-file-chosen" id="wm-sidebar-file-chosen">
+                    <span class="wm-sidebar-file-icon">📎</span>
+                    <span class="wm-sidebar-file-name" id="wm-sidebar-file-name"></span>
+                    <button class="wm-sidebar-file-remove" id="wm-sidebar-file-remove">✕</button>
+                </div>
+                <button id="wm-sidebar-resume-save" class="wm-sidebar-resume-save" disabled>Upload Resume</button>
+                <div id="wm-sidebar-resume-status" class="wm-sidebar-resume-status"></div>
+                <div class="wm-sidebar-resume-summary" id="wm-sidebar-resume-summary">
+                    <div class="wm-sidebar-summary-label">AI Summary</div>
+                    <div class="wm-sidebar-summary-text" id="wm-sidebar-summary-text"></div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+
+/* =========================================================
+   SIDEBAR EVENT WIRING
+========================================================= */
+
+function wireSidebarEvents(sidebar, toggle) {
+    // --- Collapse / Expand ---
+    sidebar.querySelector('#wm-sidebar-collapse').addEventListener('click', () => {
+        sidebar.classList.add('wm-sidebar-collapsed');
+        document.body.classList.remove('wm-sidebar-active');
+        document.documentElement.classList.remove('wm-sidebar-active');
+    });
+
+    toggle.addEventListener('click', () => {
+        sidebar.classList.remove('wm-sidebar-collapsed');
+        document.body.classList.add('wm-sidebar-active');
+        document.documentElement.classList.add('wm-sidebar-active');
+    });
+
+    // --- Tab switching ---
+    sidebar.querySelectorAll('.wm-sidebar-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            sidebar.querySelectorAll('.wm-sidebar-tab').forEach(t => t.classList.remove('wm-sidebar-tab-active'));
+            sidebar.querySelectorAll('.wm-sidebar-panel').forEach(p => p.classList.remove('wm-sidebar-panel-active'));
+            tab.classList.add('wm-sidebar-tab-active');
+            sidebar.querySelector(`#wm-sidebar-panel-${tab.dataset.tab}`).classList.add('wm-sidebar-panel-active');
+        });
+    });
+
+    // --- Sign in ---
+    sidebar.querySelector('#wm-sidebar-signin').addEventListener('click', async () => {
+        const btn = sidebar.querySelector('#wm-sidebar-signin');
+        btn.disabled = true;
+        btn.textContent = 'Signing in...';
+        try {
+            await signInWithGoogle();
+            await refreshSidebarAuth();
+        } catch (err) {
+            console.error('[Wingman] Sign-in failed:', err);
+            alert('Sign-in error: ' + err.message);
+        }
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+            Sign in with Google
+        `;
+    });
+
+    // --- Sign out ---
+    sidebar.querySelector('#wm-sidebar-signout').addEventListener('click', async () => {
+        chrome.runtime.sendMessage({ type: "SIGN_OUT" }, () => {
+            refreshSidebarAuth();
+        });
+    });
+
+    // --- Stop Gmail keyboard capture on all sidebar inputs ---
+    sidebar.querySelectorAll('input, textarea, select').forEach(el => {
+        ['keydown', 'keyup', 'keypress', 'focus', 'click'].forEach(evt => {
+            el.addEventListener(evt, e => e.stopPropagation());
+        });
+    });
+
+    // --- Wire up features ---
+    wireAnalyzer(sidebar);
+    wireLeadFinder(sidebar);
+    wireSemanticSearch(sidebar);
+    wireResumeUpload(sidebar);
+    wireReminders();
+}
+
+
+/* =========================================================
+   AUTH STATE MANAGEMENT
+========================================================= */
+
+async function refreshSidebarAuth() {
+    const sidebar = document.getElementById('wm-sidebar-wrapper');
+    if (!sidebar) return;
+
+    const session = await getContentSession();
+    const authed = !!(session && session.access_token);
+
+    const authCard = sidebar.querySelector('#wm-sidebar-auth-card');
+    const tabs = sidebar.querySelector('#wm-sidebar-tabs');
+    const userEmail = sidebar.querySelector('#wm-sidebar-user-email');
+    const signoutBtn = sidebar.querySelector('#wm-sidebar-signout');
+    const panels = sidebar.querySelectorAll('.wm-sidebar-panel');
+
+    if (authed) {
+        authCard.style.display = 'none';
+        tabs.style.display = 'flex';
+        if (session.user && session.user.email) {
+            userEmail.textContent = session.user.email;
+            userEmail.style.display = 'inline';
+        }
+        signoutBtn.style.display = 'flex';
+        panels.forEach(p => {
+            if (p.classList.contains('wm-sidebar-panel-active')) p.style.display = '';
+        });
+        // Load resume data
+        loadSidebarResume(session.access_token);
+        // Auto-sync emails
+        handleSidebarSync(true);
+    } else {
+        authCard.style.display = 'flex';
+        tabs.style.display = 'none';
+        userEmail.style.display = 'none';
+        signoutBtn.style.display = 'none';
+        // Hide all panels
+        panels.forEach(p => p.classList.remove('wm-sidebar-panel-active'));
+    }
+
+    // Also refresh semantic search overlay auth
+    refreshSemanticSearchAuth(authed);
+}

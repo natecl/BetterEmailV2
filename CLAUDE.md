@@ -141,12 +141,17 @@ BetterEmailV2/
 - `POST /scrape-emails` — Web scraper for lead generation (OpenAI + Firecrawl + Supabase cache)
 - `POST /gmail/sync` — Gmail email ingestion (requires auth, accepts provider_token)
 - `POST /search` — Semantic email search (requires auth, accepts query + filters)
+- `POST /draft-email` — Draft a single email from resume + job description (Claude Sonnet, requires auth)
+- `POST /draft-personalized-emails` — Draft personalized outreach emails to up to 3 leads. Scrapes arXiv + lead profile pages via Firecrawl, drafts with Claude using user resume. Returns `{ drafts: [{name, email, subject, body}] }`. Requires auth.
+- `POST /ai/classify-followup` — Classify if a sent email is a follow-up (Gemini Flash, requires auth)
+- `POST /ai/summarize-email` — 4–6 word AI summary of an email (Gemini Flash, requires auth)
 
 ## Implemented Features
 - **Copilot Sidebar** — Persistent right-aligned sidebar that is the main control center for all BetterEmail features. Gmail shifts left to accommodate the 350px sidebar. Replaces the old extension popup as the primary UI.
 - **Email Quality Analyzer** — Sidebar compose analyzer reads from the active Gmail compose window and provides context-aware AI feedback. Also supports AI-powered email drafting from resume.
-- **Follow-up Reminders** — Toast notification after sending, with custom scheduling. Reminders are also displayed in the sidebar's Main tab.
-- **Web Scraper / Lead Finder** — AI-powered contact discovery with 3-layer caching (prompt_cache → email_leads → live pipeline). Accessible via sidebar Leads tab.
+- **Follow-up Reminders** — Toast notification after sending, with custom scheduling. Reminders are also displayed in the sidebar's Main tab with AI-generated summaries (Gemini Flash). Smart heuristics auto-dismiss reminders when a reply is sent in the same thread (Re: prefix or threadId match).
+- **Web Scraper / Lead Finder** — AI-powered contact discovery with 3-layer caching (prompt_cache → email_leads → live pipeline). Accessible via sidebar Leads tab. After results load, a "Draft emails to top 3" button appears to auto-draft personalized outreach emails.
+- **Personalized Lead Email Drafting** — For each of the top 3 leads, scrapes arXiv and the lead's profile page (via Firecrawl), then drafts a personalized cold email with Claude Sonnet using the user's saved resume. Opens a Gmail compose window for each draft automatically.
 - **Authentication** — Supabase Google OAuth via chrome.identity, JWT middleware for protected routes. Sign-in/out is handled directly in the sidebar. Auth state changes are detected via `chrome.storage.onChanged` and the sidebar unlocks/locks instantly without page refresh.
 - **Semantic Search** — Natural language email search using OpenAI embeddings + Supabase pgvector, with Gmail sync, background indexing worker. Available in both the sidebar Search tab AND the Gmail search bar overlay with animated glow ring effect (toggled via Shift key or toggle button).
 - **Resume Upload** — PDF resume upload in sidebar Settings tab for AI-powered email drafting.
