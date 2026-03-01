@@ -358,6 +358,232 @@ async function refreshSidebarAuth() {
 
 
 /* =========================================================
+   INBOX EMAIL SUMMARY — GMAIL HIGHLIGHT + DISMISS
+========================================================= */
+
+// Map of threadId → { subject, from } for high-priority emails.
+// Storing metadata allows text-content matching when data attributes aren't available.
+const _wmHighPriorityEmails = new Map();
+let _wmGmailObserver = null;
+let _wmHighlightTimeout = null;
+
+// Gmail API returns hex thread IDs. Gmail's DOM may use decimal or "thread-f:DECIMAL".
+function _wmThreadIdVariants(hexId) {
+    if (!hexId) return [];
+    const variants = [hexId];
+    try {
+        const dec = BigInt('0x' + hexId).toString();
+        variants.push(dec);
+        variants.push('thread-f:' + dec);
+        variants.push('thread-a:r-' + dec);
+    } catch (_) {}
+    return variants;
+}
+
+// Inject styles for the amber marker strip inserted into priority rows.
+function _wmEnsureHighlightCSS() {
+    if (document.getElementById('wm-priority-style')) return;
+    const s = document.createElement('style');
+    s.id = 'wm-priority-style';
+    s.textContent = `
+        .wm-priority-marker {
+            display: block !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 4px !important;
+            height: 100% !important;
+            min-height: 20px !important;
+            background: #f59e0b !important;
+            pointer-events: none !important;
+            z-index: 9999 !important;
+        }
+        tr.wm-priority-row > td,
+        tr.wm-priority-row > td > div,
+        tr.wm-priority-row > td > div > div {
+            background-color: rgba(245,158,11,0.14) !important;
+            background: rgba(245,158,11,0.14) !important;
+        }
+    `;
+    document.head.appendChild(s);
+}
+
+// Find a Gmail inbox row using multiple strategies.
+// emailData = { subject, from } is used for content-based fallback.
+// Returns true if an element is inside the Wingman sidebar (not a Gmail inbox element).
+function _wmIsOwnElement(el) {
+    return !!(el && el.closest('#wm-sidebar-wrapper'));
+}
+
+function _wmFindGmailRow(threadId, emailData) {
+    const variants = _wmThreadIdVariants(threadId);
+
+    // Strategy 1: data-thread-id attribute — must NOT be inside our own sidebar
+    for (const v of variants) {
+        for (const el of document.querySelectorAll(`[data-thread-id="${v}"]`)) {
+            if (_wmIsOwnElement(el)) continue;
+            const r = el.closest('tr') || el;
+            if (r.tagName === 'TR') return r;
+        }
+    }
+
+    // Strategy 2: data-legacy-thread-id
+    for (const v of variants) {
+        for (const el of document.querySelectorAll(`[data-legacy-thread-id="${v}"]`)) {
+            if (_wmIsOwnElement(el)) continue;
+            const r = el.closest('tr') || el;
+            if (r.tagName === 'TR') return r;
+        }
+    }
+
+    // Strategy 3: anchor href containing any variant (outside sidebar)
+    for (const v of variants) {
+        for (const link of document.querySelectorAll(`a[href*="${v}"]`)) {
+            if (_wmIsOwnElement(link)) continue;
+            const row = link.closest('tr');
+            if (row) return row;
+        }
+    }
+
+    // Strategy 4: scan Gmail inbox <tr> rows (zA = unread, zE = read) for variant in innerHTML
+    for (const row of document.querySelectorAll('tr.zA, tr.zE')) {
+        for (const v of variants) {
+            if (row.innerHTML.includes(v)) return row;
+        }
+    }
+
+    // Strategy 5: text-content match on Gmail inbox rows (first 20 chars of subject)
+    if (emailData && emailData.subject) {
+        const needle = emailData.subject.toLowerCase().trim().substring(0, 20);
+        if (needle.length > 5) {
+            for (const row of document.querySelectorAll('tr.zA, tr.zE')) {
+                if (row.textContent.toLowerCase().includes(needle)) return row;
+            }
+        }
+    }
+
+    return null;
+}
+
+function _wmHighlightRow(row) {
+    if (!row) return;
+    // Do NOT skip rows that already have data-wm-priority — stale attribute from
+    // a previous extension load could prevent the marker from ever being inserted.
+    row.setAttribute('data-wm-priority', '1');
+    row.classList.add('wm-priority-row');
+    // Inject a solid amber strip into the first <td>.
+    // This is a brand-new element; Gmail has no styles on it, so it is always visible.
+    // box-shadow on <tr> works in Chrome even with border-collapse
+    row.style.setProperty('box-shadow', 'inset 4px 0 0 #f59e0b', 'important');
+    // Also inject a marker div into the first <td> as a belt-and-suspenders fallback
+    const firstTd = row.querySelector('td');
+    if (firstTd && !firstTd.querySelector('.wm-priority-marker')) {
+        // Set position:relative inline so the absolute marker is anchored to this cell
+        firstTd.style.setProperty('position', 'relative', 'important');
+        const marker = document.createElement('div');
+        marker.className = 'wm-priority-marker';
+        firstTd.prepend(marker);
+    }
+}
+
+function _wmUnhighlightRow(row) {
+    if (!row) return;
+    row.removeAttribute('data-wm-priority');
+    row.classList.remove('wm-priority-row');
+    row.style.removeProperty('box-shadow');
+    const marker = row.querySelector('.wm-priority-marker');
+    if (marker) marker.remove();
+    const firstTd = row.querySelector('td');
+    if (firstTd) firstTd.style.removeProperty('position');
+}
+
+function applyGmailHighlights() {
+    _wmEnsureHighlightCSS();
+    if (!_wmHighPriorityEmails.size) return;
+    _wmHighPriorityEmails.forEach((emailData, threadId) => {
+        const row = _wmFindGmailRow(threadId, emailData);
+        if (row) _wmHighlightRow(row);
+    });
+}
+
+function setupGmailHighlightObserver() {
+    if (_wmGmailObserver) return;
+    _wmGmailObserver = new MutationObserver(() => {
+        clearTimeout(_wmHighlightTimeout);
+        _wmHighlightTimeout = setTimeout(applyGmailHighlights, 400);
+    });
+    _wmGmailObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function _wmFadeRemoveItem(item) {
+    if (!item) return;
+    item.style.transition = 'opacity 0.35s ease, max-height 0.35s ease, margin 0.35s ease, padding 0.35s ease';
+    item.style.overflow = 'hidden';
+    item.style.opacity = '0';
+    item.style.maxHeight = '0';
+    item.style.marginBottom = '0';
+    item.style.padding = '0';
+    setTimeout(() => item.remove(), 380);
+}
+
+// Called when user sends a reply. threadId may be null for popup-compose replies,
+// so also match by subject (stripped of Re: prefix).
+function dismissInboxItem(threadId, subject) {
+    // Remove from highlight set and Gmail row
+    if (threadId) {
+        const emailData = _wmHighPriorityEmails.get(threadId);
+        _wmHighPriorityEmails.delete(threadId);
+        _wmUnhighlightRow(_wmFindGmailRow(threadId, emailData));
+    }
+
+    // Find sidebar item by threadId first, fall back to subject match
+    let item = threadId
+        ? document.querySelector(`.wm-inbox-item-link[data-thread-id="${threadId}"]`)
+        : null;
+
+    if (!item && subject) {
+        const normalize = s => s.replace(/^(re:\s*)+/i, '').toLowerCase().trim();
+        const clean = normalize(subject);
+        for (const el of document.querySelectorAll('.wm-inbox-item-link')) {
+            if (normalize(el.dataset.subject || '') === clean) {
+                item = el;
+                // Also remove from highlight set by its thread ID
+                const tid = el.dataset.threadId;
+                if (tid) {
+                    const emailData = _wmHighPriorityEmails.get(tid);
+                    _wmHighPriorityEmails.delete(tid);
+                    _wmUnhighlightRow(_wmFindGmailRow(tid, emailData));
+                }
+                break;
+            }
+        }
+    }
+
+    _wmFadeRemoveItem(item);
+}
+
+/* =========================================================
+   INBOX DISMISS — persistent storage helpers
+========================================================= */
+
+function _wmGetDismissedIds() {
+    return new Promise(resolve => {
+        chrome.storage.local.get('wm_dismissed_inbox', result => {
+            resolve(result.wm_dismissed_inbox || []);
+        });
+    });
+}
+
+function _wmSaveDismissedId(threadId) {
+    if (!threadId) return;
+    _wmGetDismissedIds().then(existing => {
+        if (!existing.includes(threadId)) {
+            chrome.storage.local.set({ wm_dismissed_inbox: [...existing, threadId] });
+        }
+    });
+}
+
+/* =========================================================
    INBOX EMAIL SUMMARY
 ========================================================= */
 
@@ -390,7 +616,8 @@ async function loadEmailSummary(sidebar) {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!res.ok) throw new Error(res.data?.error || 'Request failed');
-        const emails = res.data?.emails || [];
+        const dismissed = new Set(await _wmGetDismissedIds());
+        const emails = (res.data?.emails || []).filter(e => !dismissed.has(e.thread_id));
 
         if (!emails.length) {
             listEl.innerHTML = '<div class="wm-inbox-empty">No emails found. Sync your inbox first.</div>';
@@ -409,6 +636,15 @@ async function loadEmailSummary(sidebar) {
         const medium = emails.filter(e => e.priority === 'medium');
         const low    = emails.filter(e => e.priority === 'low');
 
+        // Register high-priority threads for Gmail highlighting
+        _wmHighPriorityEmails.clear();
+        high.forEach(e => {
+            if (e.thread_id) _wmHighPriorityEmails.set(e.thread_id, {
+                subject: e.subject || '',
+                from: e.from_name || e.from_email || ''
+            });
+        });
+
         function renderItem(email) {
             const priorityClass = email.priority === 'high' ? 'wm-inbox-high'
                 : email.priority === 'medium' ? 'wm-inbox-medium'
@@ -418,7 +654,12 @@ async function loadEmailSummary(sidebar) {
             const time = formatRelativeTime(email.internal_date);
             const reason = email.reason || '';
             return `
-                <div class="wm-inbox-item ${priorityClass} wm-inbox-item-link" data-thread-id="${escapeHTML(email.thread_id || '')}">
+                <div class="wm-inbox-item ${priorityClass} wm-inbox-item-link" data-thread-id="${escapeHTML(email.thread_id || '')}" data-subject="${escapeHTML(email.subject || '')}">
+                    <button class="wm-inbox-dismiss-btn" title="Dismiss">
+                        <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                        </svg>
+                    </button>
                     <div class="wm-inbox-item-header">
                         <span class="wm-inbox-priority-dot"></span>
                         <span class="wm-inbox-from" title="${escapeHTML(from)}">${escapeHTML(from)}</span>
@@ -430,26 +671,30 @@ async function loadEmailSummary(sidebar) {
             `;
         }
 
-        function renderCollapsible(id, labelClass, labelText, items) {
+        function renderCollapsible(id, labelClass, labelText, items, open = false) {
             return `
-                <div class="wm-inbox-tier-label ${labelClass} wm-inbox-tier-collapsible" data-target="${id}">
+                <div class="wm-inbox-tier-label ${labelClass} wm-inbox-tier-collapsible${open ? ' wm-inbox-tier-open' : ''}" data-target="${id}">
                     <svg class="wm-inbox-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5">
                         <polyline points="9 18 15 12 9 6"/>
                     </svg>
                     ${labelText}
                     <span class="wm-inbox-tier-count">${items.length}</span>
                 </div>
-                <div id="${id}" class="wm-inbox-collapsible-section" style="display:none;">
+                <div id="${id}" class="wm-inbox-collapsible-section" style="display:${open ? 'block' : 'none'};">
                     ${items.map(renderItem).join('')}
                 </div>
             `;
         }
 
         const sections = [];
-        if (high.length)   sections.push(`<div class="wm-inbox-tier-label wm-inbox-tier-high">Priority</div>${high.map(renderItem).join('')}`);
+        if (high.length)   sections.push(renderCollapsible('wm-inbox-high-items', 'wm-inbox-tier-high', 'Priority', high, true));
         if (medium.length) sections.push(renderCollapsible('wm-inbox-medium-items', 'wm-inbox-tier-medium', 'Regular', medium));
         if (low.length)    sections.push(renderCollapsible('wm-inbox-low-items', 'wm-inbox-tier-low', 'Newsletters & Notifications', low));
         listEl.innerHTML = sections.join('');
+
+        // Apply Gmail row highlights and keep them live
+        applyGmailHighlights();
+        setupGmailHighlightObserver();
 
         // Wire collapse toggles
         listEl.querySelectorAll('.wm-inbox-tier-collapsible').forEach(label => {
@@ -458,6 +703,22 @@ async function loadEmailSummary(sidebar) {
                 const isOpen = target.style.display !== 'none';
                 target.style.display = isOpen ? 'none' : 'block';
                 label.classList.toggle('wm-inbox-tier-open', !isOpen);
+            });
+        });
+
+        // Wire dismiss X buttons
+        listEl.querySelectorAll('.wm-inbox-dismiss-btn').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.stopPropagation();
+                const item = btn.closest('.wm-inbox-item');
+                const threadId = item?.dataset.threadId;
+                _wmSaveDismissedId(threadId);
+                if (threadId) {
+                    const emailData = _wmHighPriorityEmails.get(threadId);
+                    _wmHighPriorityEmails.delete(threadId);
+                    _wmUnhighlightRow(_wmFindGmailRow(threadId, emailData));
+                }
+                _wmFadeRemoveItem(item);
             });
         });
 

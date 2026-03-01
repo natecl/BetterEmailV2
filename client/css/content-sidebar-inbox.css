@@ -106,6 +106,7 @@
 ========================================================= */
 
 .wm-inbox-item {
+    position: relative;
     padding: 8px 10px;
     border-radius: 8px;
     margin-bottom: 4px;
@@ -116,6 +117,35 @@
 
 .wm-inbox-item-link {
     cursor: pointer;
+}
+
+/* Dismiss X button — hidden until row is hovered */
+.wm-inbox-dismiss-btn {
+    display: none;
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: rgba(255, 255, 255, 0.07);
+    border: none;
+    border-radius: 4px;
+    color: var(--wm-text-dim);
+    padding: 3px 4px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.1s ease, background 0.1s ease;
+    z-index: 1;
+}
+
+.wm-inbox-item:hover .wm-inbox-dismiss-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.wm-inbox-dismiss-btn:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .wm-inbox-item:last-child {

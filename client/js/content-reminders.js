@@ -413,6 +413,11 @@ function wmServerAI(endpoint, body) {
 function classifyAndHandleSend(subject, bodySnippet, currentThreadId, pendingThread) {
     const subjectIsReply = /^re:/i.test(subject);
 
+    // Dismiss the inbox summary item (by thread ID or subject fallback)
+    if (typeof dismissInboxItem === 'function') {
+        dismissInboxItem(currentThreadId, subject);
+    }
+
     if (currentThreadId) {
         autoDismissReminderForThread(currentThreadId, (wasCleared) => {
             if (wasCleared) return; // Reminder dismissed — done

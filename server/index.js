@@ -813,47 +813,78 @@ app.get('/emails/summary', requireAuth, async (req, res) => {
         if (error) return res.status(500).json({ error: 'Failed to fetch emails' });
         if (!emails?.length) return res.json({ emails: [] });
 
-        // Compact representation for the AI batch scorer
-        const emailList = emails.map((e, i) =>
-            `${i + 1}. From: ${e.from_name || e.from_email} | Subject: "${e.subject || '(no subject'}"` +
-            `\n   Labels: ${(e.labels || []).join(', ')}` +
-            `\n   Preview: ${(e.body_text || '').substring(0, 120).replace(/\n/g, ' ')}`
-        ).join('\n\n');
+        // ── Pre-classify without AI ──────────────────────────────────────────
+        // Only classify as low when we are 100% certain it is machine-generated.
+        // CATEGORY_PROMOTIONS is the only Gmail label that reliably means no real person.
+        // Sender pattern must be unambiguously robotic (noreply / mailer-daemon).
+        const DEFINITE_AUTO_LABELS = new Set(['CATEGORY_PROMOTIONS', 'CATEGORY_PURCHASES']);
+        const DEFINITE_AUTO_SENDER_RE = /(?:^|[\+.])(?:no.?reply|donotreply|mailer.daemon|bounce[sd]?|postmaster)@/i;
 
-        const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                model: 'google/gemini-2.0-flash-001',
-                max_tokens: 700,
-                messages: [{
-                    role: 'user',
-                    content: `Score each email by priority. Return a JSON array only. Each item: {"index":N,"priority":"high|medium|low","reason":"max 6 words"}.
+        const preClassified = new Map(); // index (1-based) → { priority, reason }
+        const needsAI = []; // { email, originalIndex }
 
-Rules:
-- "high": email from a real person requiring action, reply, or decision — job offers, professor replies, recruiter outreach, urgent requests, anything that needs a response
-- "medium": email from a real human that is informational or low-urgency — classmates, friends, colleagues, any personal sender even if not urgent
-- "low": ONLY automated/machine-generated emails — newsletters, marketing, notifications, receipts, no-reply senders, mailing lists, calendar invites from services, system alerts
+        emails.forEach((email, i) => {
+            const labels = email.labels || [];
+            const fromEmail = (email.from_email || '').toLowerCase();
 
-CRITICAL: If the sender appears to be a real human being (not a service or automated system), it must be "high" or "medium" — NEVER "low". Reserve "low" exclusively for automated or bulk email.
+            if (labels.some(l => DEFINITE_AUTO_LABELS.has(l)) || DEFINITE_AUTO_SENDER_RE.test(fromEmail)) {
+                preClassified.set(i + 1, { priority: 'low', reason: 'Automated sender' });
+            } else {
+                needsAI.push({ email, originalIndex: i + 1 });
+            }
+        });
+
+        // ── AI-score only non-automated emails ──────────────────────────────
+        let aiScores = new Map(); // originalIndex → { priority, reason }
+
+        if (needsAI.length > 0) {
+            const emailList = needsAI.map(({ email, originalIndex }, j) =>
+                `${j + 1}. From: ${email.from_name || email.from_email} | Subject: "${email.subject || '(no subject)'}"` +
+                `\n   Preview: ${(email.body_text || '').substring(0, 150).replace(/\n/g, ' ')}`
+            ).join('\n\n');
+
+            const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    model: 'google/gemini-2.0-flash-001',
+                    max_tokens: 600,
+                    messages: [{
+                        role: 'user',
+                        content: `Score each email by urgency/importance for the recipient.
+Return a JSON array only. Each item: {"index":N,"priority":"high|medium|low","reason":"max 6 words"}.
+
+- "high": needs a reply or action — interview, job offer, professor/advisor, deadline, question directed at you, urgent request
+- "medium": personal or informational message from a real individual — classmates, friends, colleagues, genuine human-written communication
+- "low": marketing, advertising, promotional offers, sales pitches, newsletters, bulk/impersonal content — even if sent from a real email address
+
+RULE: If the email is a personal message written specifically for you by a real person, it CANNOT be "low". Only use "low" for clearly impersonal, marketing, or advertising content.
 
 Emails:
 ${emailList}
 
 Return ONLY the JSON array.`
-                }]
-            })
-        });
+                    }]
+                })
+            });
 
-        const aiData = await aiRes.json();
-        const raw = aiData.choices?.[0]?.message?.content || '[]';
-        const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+            const aiData = await aiRes.json();
+            const raw = aiData.choices?.[0]?.message?.content || '[]';
+            const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+            let scores = [];
+            try { scores = JSON.parse(cleaned); } catch (_) {}
 
-        let scores = [];
-        try { scores = JSON.parse(cleaned); } catch (_) {}
+            needsAI.forEach(({ originalIndex }, j) => {
+                const score = scores.find(s => s.index === j + 1);
+                const p = score?.priority;
+                const priority = p === 'high' ? 'high' : p === 'low' ? 'low' : 'medium';
+                aiScores.set(originalIndex, { priority, reason: score?.reason || '' });
+            });
+        }
 
         const result = emails.map((email, i) => {
-            const score = scores.find(s => s.index === i + 1) || { priority: 'low', reason: '' };
+            const idx = i + 1;
+            const score = preClassified.get(idx) || aiScores.get(idx) || { priority: 'medium', reason: '' };
             return {
                 gmail_message_id: email.gmail_message_id,
                 thread_id: email.thread_id,
@@ -861,8 +892,8 @@ Return ONLY the JSON array.`
                 from_name: email.from_name || email.from_email,
                 from_email: email.from_email,
                 internal_date: email.internal_date,
-                priority: score.priority || 'low',
-                reason: score.reason || ''
+                priority: score.priority,
+                reason: score.reason
             };
         });
 
