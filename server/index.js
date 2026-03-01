@@ -635,7 +635,7 @@ app.post('/draft-email', requireAuth, async (req, res) => {
 // Draft personalized emails to up to 3 leads using arXiv research + user resume
 app.post('/draft-personalized-emails', requireAuth, async (req, res) => {
     try {
-        const { leads } = req.body;
+        const { leads, purpose } = req.body;
         if (!Array.isArray(leads) || leads.length === 0) {
             return res.status(400).json({ error: 'leads array is required' });
         }
@@ -670,45 +670,80 @@ app.post('/draft-personalized-emails', requireAuth, async (req, res) => {
             const name = (lead.name || '').trim();
             const detail = (lead.detail || '').trim();
 
-            // Gather research context from arXiv
-            let researchContext = '';
-            try {
-                const query = encodeURIComponent(`${name} ${detail}`);
-                const arxivUrl = `https://arxiv.org/search/?query=${query}&searchtype=author`;
-                const scraped = await firecrawl.scrapeUrl(arxivUrl, { formats: ['markdown'] });
-                if (scraped?.markdown) {
-                    researchContext = scraped.markdown.substring(0, 2000);
-                }
-            } catch (err) {
-                console.warn(`[Draft] arXiv scrape failed for ${name}:`, err.message);
-            }
+            // ── Deep research pipeline: run all 3 sources in parallel ──────────
+            const [arxivResult, profileResult, webResult] = await Promise.allSettled([
 
-            // Gather context from their source profile page
-            let sourceContext = '';
-            if (lead.sourceUrl) {
-                try {
-                    const scraped = await firecrawl.scrapeUrl(lead.sourceUrl, { formats: ['markdown'] });
-                    if (scraped?.markdown) {
-                        sourceContext = scraped.markdown.substring(0, 1000);
-                    }
-                } catch (err) {
-                    console.warn(`[Draft] Source URL scrape failed for ${name}:`, err.message);
-                }
-            }
+                // 1. arXiv author search — find their papers
+                (async () => {
+                    const q = encodeURIComponent(`${name} ${detail}`);
+                    const scraped = await firecrawl.scrapeUrl(
+                        `https://arxiv.org/search/?query=${q}&searchtype=author`,
+                        { formats: ['markdown'] }
+                    );
+                    return scraped?.markdown?.substring(0, 3500) || '';
+                })(),
 
-            const contextBlock = [
-                researchContext && `arXiv research:\n${researchContext}`,
-                sourceContext && `Profile page:\n${sourceContext}`
-            ].filter(Boolean).join('\n\n');
+                // 2. Source profile page — their faculty/department page
+                lead.sourceUrl
+                    ? (async () => {
+                        const scraped = await firecrawl.scrapeUrl(lead.sourceUrl, { formats: ['markdown'] });
+                        return scraped?.markdown?.substring(0, 3000) || '';
+                    })()
+                    : Promise.resolve(''),
 
-            const systemPrompt = `You are an expert at writing personalized academic and professional outreach emails. Write a concise, genuine cold email from the sender to the recipient. Rules:
-- Reference the recipient's specific research or work by name
-- Connect the sender's background (from their resume) to the recipient's interests
-- Under 180 words in the body
-- Sound natural and human, not generic
-- Output valid JSON with exactly two fields: "subject" (string) and "body" (string, plain text, no greeting or signature — just the paragraphs)`;
+                // 3. Web search — find personal site, Google Scholar, GitHub, etc.
+                (async () => {
+                    const searchRes = await firecrawl.search(
+                        `"${name}" ${detail} research publications`,
+                        { limit: 6 }
+                    );
+                    if (!searchRes?.data?.length) return '';
 
-            const userMessage = `Sender resume:\n${userData.resume_text.substring(0, 3000)}\n\nRecipient: ${name}${detail ? ` (${detail})` : ''}\nRecipient email: ${lead.email}\n\n${contextBlock || 'No additional research context available.'}`;
+                    // Block social media and other sites Firecrawl can't scrape
+                    const BLOCKED = ['facebook.com', 'twitter.com', 'x.com', 'instagram.com',
+                        'tiktok.com', 'reddit.com', 'linkedin.com', 'youtube.com', 'wikipedia.org'];
+
+                    const urls = searchRes.data
+                        .map(r => r.url)
+                        .filter(u => {
+                            if (!u || u.includes('arxiv.org') || u === lead.sourceUrl) return false;
+                            return !BLOCKED.some(d => u.includes(d));
+                        })
+                        .slice(0, 3);
+
+                    const scraped = await Promise.allSettled(
+                        urls.map(u => firecrawl.scrapeUrl(u, { formats: ['markdown'] }))
+                    );
+                    return scraped
+                        .filter(r => r.status === 'fulfilled' && r.value?.markdown)
+                        .map(r => r.value.markdown.substring(0, 2000))
+                        .join('\n\n---\n\n');
+                })()
+            ]);
+
+            const researchParts = [];
+            if (arxivResult.status === 'fulfilled' && arxivResult.value)
+                researchParts.push(`arXiv publications:\n${arxivResult.value}`);
+            if (profileResult.status === 'fulfilled' && profileResult.value)
+                researchParts.push(`Academic profile:\n${profileResult.value}`);
+            if (webResult.status === 'fulfilled' && webResult.value)
+                researchParts.push(`Additional web research:\n${webResult.value}`);
+
+            const contextBlock = researchParts.join('\n\n===\n\n');
+
+            // ── Claude prompt — forces specific, research-grounded writing ─────
+            const systemPrompt = `You are an expert at writing highly personalized outreach emails that get replies. Your emails stand out because they demonstrate genuine knowledge of the recipient's work.
+
+Write a cold email from the sender to the recipient. You MUST follow every rule below:
+- **Cite specific work**: Name at least one specific paper title, project name, tool, or dataset from the research context. Do not just mention their general field.
+- **Resume connection**: Identify the single most relevant skill, project, or experience from the sender's resume and make an explicit, concrete connection to the recipient's research — say exactly why it's relevant.
+- **Purpose first**: If an email purpose/goal is stated, build the entire email around achieving that goal. Make it the opening hook.
+- **No generic phrases**: Never use "I came across your work", "I am reaching out", "I hope this email finds you well", or similar filler openers. Start with something specific.
+- **Tight and compelling**: 160–220 words in the body. Every sentence must earn its place.
+- **Output**: Valid JSON with exactly two fields — "subject" (string, specific and compelling, not generic) and "body" (string, plain text, no greeting like "Dear X" or "Hi", no signature — just the body paragraphs).`;
+
+            const purposeSection = purpose ? `\n\nEmail purpose/goal (make this the central focus): ${purpose}` : '';
+            const userMessage = `SENDER RESUME:\n${userData.resume_text.substring(0, 4000)}\n\n===\n\nRECIPIENT: ${name}${detail ? ` — ${detail}` : ''}\nEMAIL: ${lead.email}\n\n===\n\nRESEARCH CONTEXT (use specific details from this):\n${contextBlock || 'No research context found — rely on resume and recipient name/role.'}${purposeSection}`;
 
             try {
                 const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -719,8 +754,7 @@ app.post('/draft-personalized-emails', requireAuth, async (req, res) => {
                     },
                     body: JSON.stringify({
                         model: 'anthropic/claude-sonnet-4-5',
-                        max_tokens: 600,
-                        response_format: { type: 'json_object' },
+                        max_tokens: 900,
                         messages: [
                             { role: 'system', content: systemPrompt },
                             { role: 'user', content: userMessage }
@@ -729,7 +763,9 @@ app.post('/draft-personalized-emails', requireAuth, async (req, res) => {
                 });
 
                 const aiData = await aiRes.json();
-                const content = aiData.choices?.[0]?.message?.content || '{}';
+                const raw = aiData.choices?.[0]?.message?.content || '{}';
+                // Strip markdown code fences the model sometimes wraps around JSON
+                const content = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
                 const parsed = JSON.parse(content);
 
                 return {

@@ -26,28 +26,28 @@
       "js": [
         "config.js",
         "auth.js",
-        "content-api.js",
-        "content-compose.js",
-        "content-analyzer.js",
-        "content-leads.js",
-        "content-reminders.js",
-        "content-resume.js",
-        "content-search.js",
-        "content-sidebar.js",
-        "content-init.js"
+        "js/content-api.js",
+        "js/content-compose.js",
+        "js/content-analyzer.js",
+        "js/content-leads.js",
+        "js/content-reminders.js",
+        "js/content-resume.js",
+        "js/content-search.js",
+        "js/content-sidebar.js",
+        "js/content-init.js"
       ],
       "css": [
-        "content-variables.css",
-        "content-gmail-layout.css",
-        "content-sidebar-shell.css",
-        "content-sidebar-auth.css",
-        "content-sidebar-reminders.css",
-        "content-sidebar-analyzer.css",
-        "content-sidebar-leads.css",
-        "content-sidebar-search.css",
-        "content-sidebar-settings.css",
-        "content-reminder-toast.css",
-        "content-semantic-search.css"
+        "css/content-variables.css",
+        "css/content-gmail-layout.css",
+        "css/content-sidebar-shell.css",
+        "css/content-sidebar-auth.css",
+        "css/content-sidebar-reminders.css",
+        "css/content-sidebar-analyzer.css",
+        "css/content-sidebar-leads.css",
+        "css/content-sidebar-search.css",
+        "css/content-sidebar-settings.css",
+        "css/content-reminder-toast.css",
+        "css/content-semantic-search.css"
       ]
     }
   ],

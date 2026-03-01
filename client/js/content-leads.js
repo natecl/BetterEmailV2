@@ -151,6 +151,106 @@ async function handleDraftLeadEmails(leads, btn) {
 
 
 /* =========================================================
+   PER-ROW DRAFT BUTTON — PURPOSE MODAL
+========================================================= */
+
+/**
+ * Show a modal asking the user what the email's purpose is.
+ * Returns a Promise that resolves with the purpose string, or null if cancelled.
+ */
+function showPurposeModal(lead) {
+    return new Promise((resolve) => {
+        document.querySelector('.wm-purpose-modal-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'wm-purpose-modal-overlay';
+        overlay.innerHTML = `
+            <div class="wm-purpose-modal">
+                <div class="wm-purpose-modal-header">
+                    <span>Draft email to <strong>${escapeHTML(lead.name || lead.email)}</strong></span>
+                    <button class="wm-purpose-modal-close" aria-label="Close">×</button>
+                </div>
+                <p class="wm-purpose-modal-desc">What's the purpose of your email? Be specific — the AI will use this as the main focus.</p>
+                <textarea class="wm-purpose-modal-input" placeholder="e.g. Interested in joining your lab as a research assistant for the summer..." rows="3"></textarea>
+                <div class="wm-purpose-modal-actions">
+                    <button class="wm-purpose-cancel-btn">Cancel</button>
+                    <button class="wm-purpose-submit-btn">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                        </svg>
+                        Draft Email
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const textarea = overlay.querySelector('.wm-purpose-modal-input');
+        const submitBtn = overlay.querySelector('.wm-purpose-submit-btn');
+        const cancelBtn = overlay.querySelector('.wm-purpose-cancel-btn');
+        const closeBtn = overlay.querySelector('.wm-purpose-modal-close');
+
+        function close(value) {
+            overlay.remove();
+            resolve(value);
+        }
+
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
+        closeBtn.addEventListener('click', () => close(null));
+        cancelBtn.addEventListener('click', () => close(null));
+        submitBtn.addEventListener('click', () => close(textarea.value.trim() || null));
+        textarea.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter' && e.ctrlKey) close(textarea.value.trim() || null);
+        });
+        setTimeout(() => textarea.focus(), 50);
+    });
+}
+
+/**
+ * Draft a single personalized email to one lead after asking the user for a purpose.
+ */
+async function handleSingleLeadDraft(lead, btn) {
+    const purpose = await showPurposeModal(lead);
+    if (!purpose) return; // user cancelled
+
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<div class="wm-sidebar-spinner"></div>';
+
+    try {
+        const token = await getContentAccessToken();
+        if (!token) { alert('Please sign in first.'); return; }
+
+        const res = await apiFetch(`${getApiBase()}/draft-personalized-emails`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ leads: [lead], purpose })
+        });
+
+        if (!res.ok) {
+            alert(res.data?.error || 'Failed to draft email. Check that your resume is saved in Settings.');
+            return;
+        }
+
+        const { drafts } = res.data;
+        if (!drafts || drafts.length === 0) { alert('No draft was generated.'); return; }
+
+        await openGmailComposeDraft(drafts[0]);
+    } catch (err) {
+        console.error('[Wingman] Single lead draft error:', err);
+        alert('Failed to draft email: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+    }
+}
+
+
+/* =========================================================
    LEAD FINDER (sidebar)
 ========================================================= */
 
@@ -216,13 +316,39 @@ function wireLeadFinder(sidebar) {
             html += '<tbody>';
             results.forEach(r => {
                 html += `<tr>
-                    <td>${escapeHTML(r.name || 'Unknown')}</td>
+                    <td class="wm-lead-name-cell">
+                        <span class="wm-lead-name-text">${escapeHTML(r.name || 'Unknown')}</span>
+                        <button class="wm-lead-row-draft-btn"
+                            data-email="${escapeHTML(r.email)}"
+                            data-name="${escapeHTML(r.name || '')}"
+                            data-detail="${escapeHTML(r.detail || '')}"
+                            data-sourceurl="${escapeHTML(r.sourceUrl || '')}"
+                            title="Draft a personalized email to ${escapeHTML(r.name || r.email)}">
+                            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                            </svg>
+                            Draft
+                        </button>
+                    </td>
                     <td><a href="mailto:${escapeHTML(r.email)}">${escapeHTML(r.email)}</a></td>
                     <td>${escapeHTML(r.detail || '')}</td>
                 </tr>`;
             });
             html += '</tbody></table>';
             resultsEl.innerHTML = html;
+
+            // Wire per-row draft buttons
+            resultsEl.querySelectorAll('.wm-lead-row-draft-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    handleSingleLeadDraft({
+                        email: btn.dataset.email,
+                        name: btn.dataset.name,
+                        detail: btn.dataset.detail,
+                        sourceUrl: btn.dataset.sourceurl
+                    }, btn);
+                });
+            });
 
             // Add "Draft emails to top 3" button below the table
             if (results.length > 0) {
