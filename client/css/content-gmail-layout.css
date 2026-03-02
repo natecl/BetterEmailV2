@@ -71,7 +71,9 @@ body.wm-sidebar-active header#gb [role="search"] {
 /* 2. Position the compose windows handled by JS (observeComposeWindows) */
 
 
-/* 3. Focus Glow Animation for the active Compose Window */
+/* 3. Fullscreen compose window — JS adds .wm-fullscreen-compose and sets inline styles */
+
+/* 4. Focus Glow Animation for the active Compose Window */
 body.wm-sidebar-active div.nH.Hd[role="dialog"].wm-compose-active {
     box-shadow: 0 0 0 3px rgba(142, 125, 255, 0.4), 0 8px 24px rgba(0, 0, 0, 0.2) !important;
     border: 1px solid var(--wm-primary) !important;

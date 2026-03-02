@@ -316,21 +316,65 @@ function trySendButton(composeBox) {
 // Standard CSS overrides break minimizing and multi-window math.
 // This keeper constantly enforces a robust margin offset without breaking native math.
 function observeComposeWindows() {
+    const SIDEBAR_WIDTH = 350;
+
     setInterval(() => {
         const isSidebarActive = document.body.classList.contains('wm-sidebar-active');
-        if (!isSidebarActive) return;
 
         // 1. Shift master containers leftwards safely to clear the sidebar
         const masterContainers = document.querySelectorAll('.no, .dw, .inboxsdk__compose');
         masterContainers.forEach(container => {
-            // Apply a direct margin-right override via inline style to beat Gmail's CSS
-            if (container.style.marginRight !== '345px') {
-                container.style.setProperty('margin-right', '345px', 'important');
-                container.style.setProperty('transition', 'margin-right 0.3s ease', 'important');
+            if (isSidebarActive) {
+                if (container.style.marginRight !== '350px') {
+                    container.style.setProperty('margin-right', '350px', 'important');
+                    container.style.setProperty('transition', 'margin-right 0.3s ease', 'important');
+                }
+            } else {
+                container.style.removeProperty('margin-right');
+                container.style.removeProperty('transition');
             }
         });
 
-        // Removed hardcoded width constraints to allow Gmail to naturally expand
-        // its internal buttons without clipping or crushing.
-    }, 500); // Check every half-second to override Gmail's engine
+        // 2. Handle compose dialogs that overflow into the sidebar zone
+        const composeDialogs = document.querySelectorAll('.nH.Hd[role="dialog"]');
+        const maxRight = window.innerWidth - SIDEBAR_WIDTH;
+
+        composeDialogs.forEach(dialog => {
+            if (!isSidebarActive) {
+                // Sidebar is off — remove all our overrides so Gmail works natively
+                if (dialog.classList.contains('wm-fullscreen-compose')) {
+                    dialog.classList.remove('wm-fullscreen-compose');
+                    dialog.style.removeProperty('left');
+                    dialog.style.removeProperty('top');
+                    dialog.style.removeProperty('width');
+                    dialog.style.removeProperty('height');
+                    dialog.style.removeProperty('max-width');
+                    dialog.style.removeProperty('right');
+                    dialog.style.removeProperty('position');
+                }
+                return;
+            }
+
+            const rect = dialog.getBoundingClientRect();
+
+            // If the dialog's right edge bleeds into the sidebar, resize it
+            if (rect.right > maxRight && rect.width > 500) {
+                dialog.classList.add('wm-fullscreen-compose');
+
+                // Add padding so it doesn't touch the edges
+                const PADDING = 24;
+                const availableWidth = maxRight;
+                const newLeft = PADDING;
+                const newWidth = availableWidth - (PADDING * 2);
+
+                dialog.style.setProperty('position', 'fixed', 'important');
+                dialog.style.setProperty('left', newLeft + 'px', 'important');
+                dialog.style.setProperty('top', rect.top + 'px', 'important');
+                dialog.style.setProperty('width', newWidth + 'px', 'important');
+                dialog.style.setProperty('max-width', newWidth + 'px', 'important');
+                dialog.style.setProperty('height', rect.height + 'px', 'important');
+                dialog.style.removeProperty('right');
+            }
+        });
+    }, 300);
 }
