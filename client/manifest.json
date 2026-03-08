@@ -14,7 +14,7 @@
     "service_worker": "background.js"
   },
   "host_permissions": [
-    "http://localhost:3000/*",
+    "https://wingman-lyart-seven.vercel.app/*",
     "https://mail.google.com/*",
     "https://*.supabase.co/*"
   ],

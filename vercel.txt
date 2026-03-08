@@ -1,0 +1,30 @@
+Please set up a `vercel.json` configuration file so that our Express backend server will correctly deploy inside the serverless functions architecture on Vercel.
+
+**File to Create:**
+File path: `server/vercel.json`
+
+**Instructions for `vercel.json` Setup:**
+Create the `vercel.json` file in the `server` folder with the following contents:
+
+```json
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "index.js"
+    }
+  ]
+}
+```
+
+**Context for context:**
+- We are running an Express server using standard CommonJS module syntax.
+- The entry point for the entire application is `server/index.js`.
+- Vercel deployments expect serverless function routing. The `"builds"` section tells Vercel's Edge functions to wrap the node backend, and the `"routes"` section tells Vercel to proxy all incoming routing requests specifically to the `index.js` application for processing.

@@ -3,7 +3,7 @@
  * Extension Popup Controller
  */
 
-const API_BASE = typeof WM_CONFIG !== 'undefined' ? WM_CONFIG.API_URL : "http://localhost:3000";
+const API_BASE = typeof WM_CONFIG !== 'undefined' ? WM_CONFIG.API_URL : "https://wingman-lyart-seven.vercel.app";
 const API_URL = API_BASE + "/analyze-email";
 
 const GMAIL_THREAD_ID_RE = /^[A-Za-z0-9_\-]{8,}$/;

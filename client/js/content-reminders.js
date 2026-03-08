@@ -383,7 +383,7 @@ function wmServerAI(endpoint, body) {
             if (!token) { resolve(null); return; }
             chrome.runtime.sendMessage({
                 type: 'API_FETCH',
-                url: 'http://localhost:3000' + endpoint,
+                url: 'https://wingman-lyart-seven.vercel.app' + endpoint,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

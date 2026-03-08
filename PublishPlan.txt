@@ -1,0 +1,29 @@
+# Wingman Chrome Extension - Publishing Checklist
+
+## 1. Host your backend
+- [ ] Put your server on a hosting provider (e.g., Vercel, Railway, Render, Fly, or Cloudflare)
+- [ ] Make sure the server is reachable over HTTPS
+
+## 2. Update the extension for production
+- [ ] Replace `localhost` URLs with your production API URL in the extension code
+- [ ] Check OAuth redirect URIs (if using Google login)
+- [ ] Verify permissions in `manifest.json` are only the ones you actually need
+- [ ] Make sure content scripts and host permissions match the sites Wingman uses
+
+## 3. Test it locally as a production build
+- [ ] Load it unpacked in Chrome (`chrome://extensions/`)
+- [ ] Test all features using the real production backend
+
+## 4. Create the zip
+- [ ] Zip the extension files themselves (do **not** zip the parent folder)
+
+## 5. Register a Chrome Web Store developer account
+- [ ] Go to Chrome Web Store Developer Dashboard
+- [ ] Pay the one-time registration fee
+
+## 6. Upload in the Chrome Web Store dashboard
+- [ ] Upload the extension ZIP file
+- [ ] Fill out the store listing details
+- [ ] Provide required privacy disclosures
+- [ ] Upload screenshots and store metadata
+- [ ] Submit it for review

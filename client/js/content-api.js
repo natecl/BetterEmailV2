@@ -61,7 +61,7 @@ async function isAuthenticated() {
 }
 
 function getApiBase() {
-    return typeof WM_CONFIG !== 'undefined' ? WM_CONFIG.API_URL : 'http://localhost:3000';
+    return typeof WM_CONFIG !== 'undefined' ? WM_CONFIG.API_URL : 'https://wingman-lyart-seven.vercel.app';
 }
 
 async function getContentAccessToken() {
